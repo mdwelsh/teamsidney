@@ -16,8 +16,8 @@ try:
 except ImportError:
     exit("This script requires the pillow module\nInstall with: sudo pip install pillow")
 
-unicorn.rotation(90)
-unicorn.brightness(0.5)
+#unicorn.rotation(90)
+#unicorn.brightness(0.5)
 width, height = unicorn.get_shape()
 
 def showImage(imageFile):
@@ -36,7 +36,12 @@ def showImage(imageFile):
 #          unicorn.set_pixel(x, y, r, g, b)
   unicorn.show()
 
-showImage('stormtrooper.png')
+showImage('bb9e.png')
+
+#for x in range(width):
+#  for y in range(height):
+#    unicorn.set_pixel(x, y, x * 16, y * 16, 0)
+#unicorn.show()
 
 while True:
   unicorn.show()

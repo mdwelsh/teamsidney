@@ -8,15 +8,13 @@ except ImportError:
     print("To simulate a unicorn HAT on your computer, please pip install pygame")
 
 class UnicornHatSim(object):
-    def __init__(self, width, height, rotation_offset = 0):
+    def __init__(self, width, height):
         # Compat with old library
         self.AUTO = None
         self.PHAT = None
             
         # Set some defaults
-        self.rotation_offset = rotation_offset
-        self.rotation(0)
-        self.pixels = [(0, 0, 0)] * width * height
+        self.pixels = [[(0, 0, 0) for x in range(width)] for y in range(height)]
         self.pixel_size = 15
         self.width = width
         self.height = height
@@ -30,8 +28,7 @@ class UnicornHatSim(object):
         self.clear()
 
     def set_pixel(self, x, y, r, g, b):
-        i = (x * self.width) + y
-        self.pixels[i] = [int(r), int(g), int(b)]
+        self.pixels[x][y] = [int(r), int(g), int(b)]
 
     def draw(self):
         for event in pygame.event.get(): # User did something
@@ -54,9 +51,9 @@ class UnicornHatSim(object):
     def draw_gfxcircle(self, x, y):
         p = self.pixel_size
         w_x = int(x * p + self.pixel_size / 2)
-        w_y = int((self.height - 1 - y) * p + self.pixel_size / 2)
+        w_y = int(y * p + self.pixel_size / 2)
         r = int(self.pixel_size / 4)
-        color = self.pixels[self.index(x, y)]
+        color = self.pixels[x][y]
         pygame.gfxdraw.aacircle(self.screen, w_x, w_y, r, color)
         pygame.gfxdraw.filled_circle(self.screen, w_x, w_y, r, color)
 
@@ -67,13 +64,13 @@ class UnicornHatSim(object):
         pass
 
     def rotation(self, r):
-        self._rotation = int(round(r/90.0)) % 3
+        pass
 
     def clear(self):
         self.screen.fill((0, 0, 0))
 
     def get_rotation(self):
-        return self._rotation * 90
+        return 0
 
     def set_layout(self, *args):
         pass
@@ -86,27 +83,9 @@ class UnicornHatSim(object):
         print("Closing window")
         pygame.quit()
 
-    def index(self, x, y):
-        # Offset to match device rotation
-        rot = (self.get_rotation() + self.rotation_offset) % 360
-
-        if rot == 0:
-            xx = x
-            yy = y
-        elif rot == 90:
-            xx = self.height - 1 - y
-            yy = x
-        elif rot == 180:
-            xx = self.width - 1 - x
-            yy = self.height - 1 - y
-        elif rot == 270:
-            xx = y
-            yy = self.width - 1 - x
-        return (xx * self.width) + yy
-
 # SD hats works as expected
-unicornhat = UnicornHatSim(8,8)
-unicornphat = UnicornHatSim(8, 4)
+#unicornhat = UnicornHatSim(8,8)
+#unicornphat = UnicornHatSim(8, 4)
 
-unicornhathd = UnicornHatSim(16, 16, 180)
+unicornhathd = UnicornHatSim(16, 16)
 
