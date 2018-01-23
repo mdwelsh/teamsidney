@@ -16,9 +16,36 @@ try:
 except ImportError:
     exit("This script requires the pillow module\nInstall with: sudo pip install pillow")
 
-#unicorn.rotation(90)
-#unicorn.brightness(0.5)
+unicorn.brightness(0.5)
 width, height = unicorn.get_shape()
+
+def loadImages(imageList):
+  images = [Image.open(fn) for fn in imageList]
+  pixels = [[(0, 0, 0) for y in range(height)] for x in range(width * len(imageList))]
+  for i, img in enumerate(images):
+    x_offset = width * i
+    for x in range(width):
+      for y in range(height):
+        pixels[x + x_offset][y] = img.getpixel((x, y))
+  return pixels
+
+def slideShow(imageList, delay):
+  max_x = width * len(imageList)
+  pixels = loadImages(imageList)
+  x_offset = 0
+  while True:
+    if (x_offset % width) == 1:
+      unicorn.show()
+      time.sleep(5 * delay)
+    for x in range(width):
+      for y in range(height):
+        px = (x + x_offset) % max_x
+        py = y
+        (r, g, b, a) = pixels[px][py]
+        unicorn.set_pixel(x, y, r, g, b)
+    unicorn.show()
+    time.sleep(delay)
+    x_offset += 1
 
 def showImage(imageFile):
   img = Image.open(imageFile)
@@ -27,21 +54,10 @@ def showImage(imageFile):
       pixel = img.getpixel((x, y))
       r, g, b = int(pixel[0]),int(pixel[1]),int(pixel[2])
       unicorn.set_pixel(x, y, r, g, b)
-#  for o_x in range(int(img.size[0]/width)):
-#    for o_y in range(int(img.size[1]/height)):
-#      for x in range(width):
-#        for y in range(height):
-#          pixel = img.getpixel(((o_x*width)+y,(o_y*height)+x))
-#          r, g, b = int(pixel[0]),int(pixel[1]),int(pixel[2])
-#          unicorn.set_pixel(x, y, r, g, b)
   unicorn.show()
 
-showImage('bb9e.png')
-
-#for x in range(width):
-#  for y in range(height):
-#    unicorn.set_pixel(x, y, x * 16, y * 16, 0)
-#unicorn.show()
+#showImage('bb9e.png')
+slideShow(['bb8.png', 'ls1.png', 'bb9e.png', 'ls2.png', 'stormtrooper.png'], 0.1)
 
 while True:
   unicorn.show()
