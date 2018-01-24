@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import copy
 import random
 import signal
 import time
@@ -18,6 +19,36 @@ except ImportError:
 
 unicorn.brightness(0.5)
 width, height = unicorn.get_shape()
+
+def loadImage(imageFile):
+  return loadImages([imageFile])
+
+def applyFade(pixels, mult):
+  newpixels = copy.deepcopy(pixels)
+  for x in range(width):
+    for y in range(height):
+      pixel = newpixels[x][y]
+      newpixel = (pixel[0] * mult, pixel[1] * mult, pixel[2] * mult)
+      newpixels[x][y] = newpixel
+  return newpixels
+
+def fadeOut(img, delay):
+  pixels = loadImage(img)
+  mult = 1.0
+  while mult > 0.0:
+    fp = applyFade(pixels, mult)
+    drawImage(fp)
+    mult = mult - 0.1
+    time.sleep(delay)
+
+def fadeIn(img, delay):
+  pixels = loadImage(img)
+  mult = 0.0
+  while mult <= 1.0:
+    fp = applyFade(pixels, mult)
+    drawImage(fp)
+    mult = mult + 0.1
+    time.sleep(delay)
 
 def loadImages(imageList):
   images = [Image.open(fn) for fn in imageList]
@@ -47,18 +78,39 @@ def slideShow(imageList, delay):
     time.sleep(delay)
     x_offset += 1
 
-def showImage(imageFile):
-  img = Image.open(imageFile)
+def drawImage(pixels):
   for x in range(width):
     for y in range(height):
-      pixel = img.getpixel((x, y))
+      pixel = pixels[x][y]
       r, g, b = int(pixel[0]),int(pixel[1]),int(pixel[2])
       unicorn.set_pixel(x, y, r, g, b)
   unicorn.show()
 
-#showImage('bb9e.png')
-slideShow(['bb8.png', 'ls1.png', 'bb9e.png', 'ls2.png', 'stormtrooper.png'], 0.1)
-
-while True:
+def showImage(imageFile):
+  pixels = Image.open(imageFile)
+  for x in range(width):
+    for y in range(height):
+      pixel = pixels.getpixel((x, y))
+      r, g, b = int(pixel[0]),int(pixel[1]),int(pixel[2])
+      unicorn.set_pixel(x, y, r, g, b)
   unicorn.show()
+
+def main():
+  print 'Hi there Sidney this is the main function'
+  #showImage('bb9e.png')
+  #slideShow(['bb82.png', 'ls1.png', 'bb9e.png', 'ls2.png', 'stormtrooper.png'], 0.1)
+
+  while True:
+    fadeOut('bb82.png', 0.1)
+    fadeIn('bb8.png', 0.1)
+    fadeOut('bb8.png', 0.1)
+    fadeIn('bb82.png', 0.1)
+
+  while True:
+    unicorn.show()
   time.sleep(1)
+
+if __name__ == "__main__":
+  main()
+
+
