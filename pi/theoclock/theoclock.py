@@ -86,7 +86,7 @@ def drawImage(pixels):
       pixel = pixels[x][y]
       r, g, b = int(pixel[0]),int(pixel[1]),int(pixel[2])
       unicorn.set_pixel(x, y, r, g, b)
-  unicorn.show()
+#  unicorn.show()
 
 def showImage(imageFile):
   pixels = Image.open(imageFile)
@@ -104,32 +104,74 @@ def fadeBetween(img1, img2, delay):
   fadeOut(img2, 0.1)
   fadeIn(img1, 0.1)
 
+#    +-----+
+#    |01234|   if step < width: x = step, y = 0
+#    |    5|   elif step < (width*2)-1: x = width-1, y = step-(width-1)
+#    |    6|   elif step < (width*3)-2: x = (width*3-2)-(step+1), y = width-1
+#    |111 7|   else: x = 0, y = 12 - (step-(width * 3)-2)
+#    |21098|
+#    +-----+
+
+def drawComet(step, color, tail):
+  for t in range(tail):
+    r, g, b = color
+    fade = 1.0 - (t*1.0/tail)
+    cometDot(step-t, (int(r * fade), int(g * fade), int(b * fade)))
+
+def cometDot(step, color):
+  if step < 0:
+    return
+  if step < width:
+    x = step
+    y = 0
+  elif step < (width*2)-1:
+    x = width-1
+    y = step-(width-1)
+  elif step < (width*3)-2:
+    x = ((width*3)-2)-(step+1)
+    y = width-1
+  else:
+    x = 0
+    y = ((width*3)-2) - (step+1)
+  r, g, b = color
+  unicorn.set_pixel(x, y, r, g, b)
+#  unicorn.show()
+
 def doClock(clock, dayImage, nightImage, bedTime, wakeupTime):
+  tick = 0
   while True:
-    today = clock.today().replace(hour=0, minute=0, second=0, microsecond=0).date()
-    wakeup = clock.combine(today, wakeupTime)
-    sleepy = clock.combine(today, bedTime)
-    now = clock.now()
-    print 'It is now ' + str(now)
-    print 'wakeup is ' + str(wakeup)
-    print 'sleepy is ' + str(sleepy)
-    print ''
+    if tick == 0:
+      today = clock.today().replace(hour=0, minute=0, second=0, microsecond=0).date()
+      wakeup = clock.combine(today, wakeupTime)
+      sleepy = clock.combine(today, bedTime)
+      now = clock.now()
+      print 'It is now ' + str(now)
+      print 'wakeup is ' + str(wakeup)
+      print 'sleepy is ' + str(sleepy)
+      print ''
 
-    # Note: This logic assumes two things:
-    #  (1) wakeup < sleepy, AND
-    #  (2) midnight comes between sleepy and wakeup.
-    if now > wakeup and now < sleepy:
-      showImage(dayImage)
-    elif now > sleepy:
-      showImage(nightImage)
-    elif now < wakeup:
-      showImage(nightImage)
+      # Note: This logic assumes two things:
+      #  (1) wakeup < sleepy, AND
+      #  (2) midnight comes between sleepy and wakeup.
+      if now > wakeup and now < sleepy:
+        showImage(dayImage)
+      elif now > sleepy:
+        showImage(nightImage)
+      elif now < wakeup:
+        showImage(nightImage)
 
-    time.sleep(1)
-    
+    drawComet(tick, (255, 0, 0), 20)
+    tick += 1
+    if (tick >= (width*4)-3):
+      tick = 0
+
+    time.sleep(0.02)
+    unicorn.show()
 
 def main():
-  doClock(datetime.datetime, 'bb82.png', 'stormtrooper.png', datetime.time(21, 00, 00), datetime.time(20, 1, 0))
+  doClock(
+      datetime.datetime, 'bb82.png', 'stormtrooper.png',
+      datetime.time(21, 00, 00), datetime.time(20, 1, 0))
 
   while True:
     unicorn.show()

@@ -41,6 +41,8 @@ class UnicornHatSim(object):
                 self.draw_led(x, y)
 
     def show(self):
+        print 'SHOW'
+        pygame.display.flip()
         self.clear()
         self.draw()
         pygame.display.flip()
