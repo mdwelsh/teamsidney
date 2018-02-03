@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import copy
+import datetime
 import random
 import signal
 import time
@@ -58,6 +59,7 @@ def loadImages(imageList):
     for x in range(width):
       for y in range(height):
         pixels[x + x_offset][y] = img.getpixel((x, y))
+    img.close()
   return pixels
 
 def slideShow(imageList, delay):
@@ -94,17 +96,40 @@ def showImage(imageFile):
       r, g, b = int(pixel[0]),int(pixel[1]),int(pixel[2])
       unicorn.set_pixel(x, y, r, g, b)
   unicorn.show()
+  pixels.close()
+
+def fadeBetween(img1, img2, delay):
+  fadeOut(img1, 0.1)
+  fadeIn(img2, 0.1)
+  fadeOut(img2, 0.1)
+  fadeIn(img1, 0.1)
+
+def doClock(clock, dayImage, nightImage, bedTime, wakeupTime):
+  while True:
+    today = clock.today().replace(hour=0, minute=0, second=0, microsecond=0).date()
+    wakeup = clock.combine(today, wakeupTime)
+    sleepy = clock.combine(today, bedTime)
+    now = clock.now()
+    print 'It is now ' + str(now)
+    print 'wakeup is ' + str(wakeup)
+    print 'sleepy is ' + str(sleepy)
+    print ''
+
+    # Note: This logic assumes two things:
+    #  (1) wakeup < sleepy, AND
+    #  (2) midnight comes between sleepy and wakeup.
+    if now > wakeup and now < sleepy:
+      showImage(dayImage)
+    elif now > sleepy:
+      showImage(nightImage)
+    elif now < wakeup:
+      showImage(nightImage)
+
+    time.sleep(1)
+    
 
 def main():
-  print 'Hi there Sidney this is the main function'
-  #showImage('bb9e.png')
-  #slideShow(['bb82.png', 'ls1.png', 'bb9e.png', 'ls2.png', 'stormtrooper.png'], 0.1)
-
-  while True:
-    fadeOut('bb82.png', 0.1)
-    fadeIn('bb8.png', 0.1)
-    fadeOut('bb8.png', 0.1)
-    fadeIn('bb82.png', 0.1)
+  doClock(datetime.datetime, 'bb82.png', 'stormtrooper.png', datetime.time(21, 00, 00), datetime.time(20, 1, 0))
 
   while True:
     unicorn.show()
