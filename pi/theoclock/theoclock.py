@@ -170,7 +170,7 @@ def doClock(clock, dayImage, nightImage, bedTime, wakeupTime):
 
 def main():
   doClock(
-      datetime.datetime, 'bb82.png', 'stormtrooper.png',
+      datetime.datetime, 'stormtrooper2.png', 'stormtrooper2.png',
       datetime.time(21, 00, 00), datetime.time(20, 1, 0))
 
   while True:
