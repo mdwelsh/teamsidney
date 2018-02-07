@@ -90,13 +90,16 @@ def drawImage(pixels):
 
 def showImage(imageFile):
   pixels = Image.open(imageFile)
+  image = [[(0, 0, 0) for x in range(width)] for y in range(height)]
   for x in range(width):
     for y in range(height):
       pixel = pixels.getpixel((x, y))
       r, g, b = int(pixel[0]),int(pixel[1]),int(pixel[2])
+      image[x][y] = (r, g, b)
       unicorn.set_pixel(x, y, r, g, b)
   unicorn.show()
   pixels.close()
+  return image
 
 def fadeBetween(img1, img2, delay):
   fadeOut(img1, 0.1)
@@ -104,23 +107,9 @@ def fadeBetween(img1, img2, delay):
   fadeOut(img2, 0.1)
   fadeIn(img1, 0.1)
 
-#    +-----+
-#    |01234|   if step < width: x = step, y = 0
-#    |    5|   elif step < (width*2)-1: x = width-1, y = step-(width-1)
-#    |    6|   elif step < (width*3)-2: x = (width*3-2)-(step+1), y = width-1
-#    |111 7|   else: x = 0, y = 12 - (step-(width * 3)-2)
-#    |21098|
-#    +-----+
-
-def drawComet(step, color, tail):
-  for t in range(tail):
-    r, g, b = color
-    fade = 1.0 - (t*1.0/tail)
-    cometDot(step-t, (int(r * fade), int(g * fade), int(b * fade)))
-
-def cometDot(step, color):
+def cometDotCoords(step):
   if step < 0:
-    return
+    return cometDotCoords((step + ((width-1)*4) + 1))
   if step < width:
     x = step
     y = 0
@@ -133,11 +122,36 @@ def cometDot(step, color):
   else:
     x = 0
     y = ((width*3)-2) - (step+1)
+  return (x, y)
+
+def cometDot(step, color):
+  (x, y) = cometDotCoords(step)
   r, g, b = color
   unicorn.set_pixel(x, y, r, g, b)
-#  unicorn.show()
 
-def doClock(clock, dayImage, nightImage, bedTime, wakeupTime):
+# If mix == 0, then all color1
+# If mix == 1, then all color2.
+def interpolate(color1, color2, mix):
+  r = (color1[0] * (1.0 - mix)) + (color2[0] * mix)
+  g = (color1[1] * (1.0 - mix)) + (color2[1] * mix)
+  b = (color1[2] * (1.0 - mix)) + (color2[2] * mix)
+  return (r, g, b)
+
+def drawComet(step, color, tail, originalImage):
+  for t in range(tail):
+    r, g, b = color
+    fade = 1.0 - (t*1.0/tail)
+    x, y = cometDotCoords(step-t)
+    ro, go, bo = originalImage[x][y]
+    rt, gt, bt = interpolate((ro, go, bo), (r, g, b), fade)
+    cometDot(step-t, (int(rt), int(gt), int(bt)))
+
+  # Put back the tail.
+  x, y = cometDotCoords(step-tail)
+  r, g, b = originalImage[x][y]
+  cometDot(step-tail, (r, g, b))
+
+def doClock(clock, dayImage, nightImage, wakeupTime, bedTime):
   tick = 0
   while True:
     if tick == 0:
@@ -145,33 +159,28 @@ def doClock(clock, dayImage, nightImage, bedTime, wakeupTime):
       wakeup = clock.combine(today, wakeupTime)
       sleepy = clock.combine(today, bedTime)
       now = clock.now()
-      print 'It is now ' + str(now)
-      print 'wakeup is ' + str(wakeup)
-      print 'sleepy is ' + str(sleepy)
-      print ''
-
       # Note: This logic assumes two things:
       #  (1) wakeup < sleepy, AND
       #  (2) midnight comes between sleepy and wakeup.
       if now > wakeup and now < sleepy:
-        showImage(dayImage)
+        curImage = showImage(dayImage)
       elif now > sleepy:
-        showImage(nightImage)
+        curImage = showImage(nightImage)
       elif now < wakeup:
-        showImage(nightImage)
+        curImage = showImage(nightImage)
 
-    drawComet(tick, (255, 0, 0), 20)
+    drawComet(tick, (255, 0, 0), 20, curImage)
     tick += 1
     if (tick >= (width*4)-3):
       tick = 0
 
-    time.sleep(0.02)
+    time.sleep(0.04)
     unicorn.show()
 
 def main():
   doClock(
-      datetime.datetime, 'stormtrooper2.png', 'stormtrooper2.png',
-      datetime.time(21, 00, 00), datetime.time(20, 1, 0))
+      datetime.datetime, 'bb82.png', 'stormtrooper3.png',
+      datetime.time(18, 00, 00), datetime.time(19, 28, 0))
 
   while True:
     unicorn.show()
