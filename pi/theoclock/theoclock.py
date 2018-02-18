@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import copy
 import datetime
@@ -20,8 +20,12 @@ try:
 except ImportError:
     exit("This script requires the pillow module\nInstall with: sudo pip install pillow")
 
-unicorn.brightness(0.5)
+unicorn.brightness(0.2)
+unicorn.rotation(0)
 width, height = unicorn.get_shape()
+
+def setPixel(x, y, r, g, b):
+  unicorn.set_pixel((width-1)-x, y, r, g, b)
 
 def loadImage(imageFile):
   return loadImages([imageFile])
@@ -77,7 +81,7 @@ def slideShow(imageList, delay):
         px = (x + x_offset) % max_x
         py = y
         (r, g, b, a) = pixels[px][py]
-        unicorn.set_pixel(x, y, r, g, b)
+        setPixel(x, y, r, g, b)
     unicorn.show()
     time.sleep(delay)
     x_offset += 1
@@ -88,7 +92,7 @@ def drawImage(pixels):
     for y in range(height):
       pixel = pixels[x][y]
       r, g, b = int(pixel[0]),int(pixel[1]),int(pixel[2])
-      unicorn.set_pixel(x, y, r, g, b)
+      setPixel(x, y, r, g, b)
 #  unicorn.show()
 
 def showImage(imageFile):
@@ -99,7 +103,7 @@ def showImage(imageFile):
       pixel = pixels.getpixel((x, y))
       r, g, b = int(pixel[0]),int(pixel[1]),int(pixel[2])
       image[x][y] = (r, g, b)
-      unicorn.set_pixel(x, y, r, g, b)
+      setPixel(x, y, r, g, b)
   unicorn.show()
   pixels.close()
   return image
@@ -130,7 +134,7 @@ def cometDotCoords(step):
 def cometDot(step, color):
   (x, y) = cometDotCoords(step)
   r, g, b = color
-  unicorn.set_pixel(x, y, r, g, b)
+  setPixel(x, y, r, g, b)
 
 # If mix == 0, then all color1
 # If mix == 1, then all color2.
@@ -157,13 +161,19 @@ def drawComet(step, color, tail, originalImage):
 
 def doClock(clock, dayImage, nightImage, wakeupTime, bedTime, stepTime=0.04):
   tick = 0
+  prev = datetime.datetime.fromtimestamp(0)
   while True:
     if tick == 0:
-      showTime()
       today = clock.today().replace(hour=0, minute=0, second=0, microsecond=0).date()
       wakeup = clock.combine(today, wakeupTime)
       sleepy = clock.combine(today, bedTime)
       now = clock.now()
+
+      # Every minute, show the time
+      if now - prev >= datetime.timedelta(seconds=60):
+        showTime(now)
+        prev = now
+
       # Note: This logic assumes two things:
       #  (1) wakeup < sleepy, AND
       #  (2) midnight comes between sleepy and wakeup.
@@ -186,7 +196,7 @@ def doClock(clock, dayImage, nightImage, wakeupTime, bedTime, stepTime=0.04):
 def clear():
   for x in range(width):
     for y in range(height):
-      unicorn.set_pixel(x, y, 0, 0, 0)
+      setPixel(x, y, 0, 0, 0)
 
 
 def combineBitmaps(bitmaps):
@@ -220,9 +230,9 @@ def scroll(bitmap, color, stepTime, yoffset):
           pixel = False
 
         if pixel:
-          unicorn.set_pixel(x, sy+yoffset, r, g, b)
+          setPixel(x, sy+yoffset, r, g, b)
         else:
-          unicorn.set_pixel(x, sy+yoffset, 0, 0, 0)
+          setPixel(x, sy+yoffset, 0, 0, 0)
     time.sleep(stepTime)
     unicorn.show()
 
@@ -234,7 +244,6 @@ def showTime(dt=datetime.datetime.now()):
   second = dt.second
   if hour > 12:
     hour -= 12
-  print '%02d : %02d : %02d' % (hour, minute, second)
   bitmaps = []
   bitmaps.extend(digits.getBitmap('%02d' % hour))
   bitmaps.append(digits.stringToBitmap(digits.colon))
@@ -248,7 +257,7 @@ def showTime(dt=datetime.datetime.now()):
 def main():
   doClock(
       datetime.datetime, 'bb82.png', 'stormtrooper3.png',
-      datetime.time(18, 00, 00), datetime.time(19, 28, 0))
+      datetime.time(7, 00, 00), datetime.time(19, 00, 0))
 
   while True:
     unicorn.show()
