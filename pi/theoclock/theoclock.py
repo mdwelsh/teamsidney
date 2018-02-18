@@ -7,6 +7,8 @@ import signal
 import time
 from sys import exit
 
+import digits
+
 try:
   import unicornhathd as unicorn
   print("unicorn hat hd detected")
@@ -80,6 +82,7 @@ def slideShow(imageList, delay):
     time.sleep(delay)
     x_offset += 1
 
+
 def drawImage(pixels):
   for x in range(width):
     for y in range(height):
@@ -151,10 +154,12 @@ def drawComet(step, color, tail, originalImage):
   r, g, b = originalImage[x][y]
   cometDot(step-tail, (r, g, b))
 
-def doClock(clock, dayImage, nightImage, wakeupTime, bedTime):
+
+def doClock(clock, dayImage, nightImage, wakeupTime, bedTime, stepTime=0.04):
   tick = 0
   while True:
     if tick == 0:
+      showTime()
       today = clock.today().replace(hour=0, minute=0, second=0, microsecond=0).date()
       wakeup = clock.combine(today, wakeupTime)
       sleepy = clock.combine(today, bedTime)
@@ -174,8 +179,71 @@ def doClock(clock, dayImage, nightImage, wakeupTime, bedTime):
     if (tick >= (width*4)-3):
       tick = 0
 
-    time.sleep(0.04)
+    time.sleep(stepTime)
     unicorn.show()
+
+
+def clear():
+  for x in range(width):
+    for y in range(height):
+      unicorn.set_pixel(x, y, 0, 0, 0)
+
+
+def combineBitmaps(bitmaps):
+  # Assume all bitmaps are the same height.
+  h = len(bitmaps[0])
+  w = 0
+  for bm in bitmaps:
+    # Assume all rows within a bitmap are the same width.
+    w += len(bm[0])
+
+  result = [[False for x in range(w)] for y in range(h)]
+  tx = 0
+  for bm in bitmaps:
+    for sy in range(len(bm)):
+      for sx in range(len(bm[sy])):
+        result[sy][tx+sx] = bm[sy][sx]
+    tx += len(bm[0])
+  return result
+
+
+def scroll(bitmap, color, stepTime, yoffset):
+  h = len(bitmap)
+  w = len(bitmap[0])
+  r, g, b = color
+  for xoffset in range(w):
+    for x in range(width):
+      for sy in range(h):
+        if x+xoffset < w:
+          pixel = bitmap[sy][x+xoffset]
+        else:
+          pixel = False
+
+        if pixel:
+          unicorn.set_pixel(x, sy+yoffset, r, g, b)
+        else:
+          unicorn.set_pixel(x, sy+yoffset, 0, 0, 0)
+    time.sleep(stepTime)
+    unicorn.show()
+
+
+def showTime(dt=datetime.datetime.now()):
+  clear()
+  hour = dt.hour
+  minute = dt.minute
+  second = dt.second
+  if hour > 12:
+    hour -= 12
+  print '%02d : %02d : %02d' % (hour, minute, second)
+  bitmaps = []
+  bitmaps.extend(digits.getBitmap('%02d' % hour))
+  bitmaps.append(digits.stringToBitmap(digits.colon))
+  bitmaps.extend(digits.getBitmap('%02d' % minute))
+  bitmaps.append(digits.stringToBitmap(digits.colon))
+  bitmaps.extend(digits.getBitmap('%02d' % second))
+  bitmap = combineBitmaps(bitmaps)
+  scroll(bitmap, (0, 0, 255), 0.06, 5)
+
 
 def main():
   doClock(
