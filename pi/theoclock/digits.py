@@ -88,6 +88,8 @@ colon = '''
    
 '''
 
+space = '\n     \n     \n     \n     \n     \n'
+
 
 def stringToBitmap(s):
   rows = s.split('\n')[1:-1]

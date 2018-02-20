@@ -20,7 +20,6 @@ try:
 except ImportError:
     exit("This script requires the pillow module\nInstall with: sudo pip install pillow")
 
-unicorn.brightness(0.2)
 unicorn.rotation(0)
 width, height = unicorn.get_shape()
 
@@ -158,35 +157,54 @@ def drawComet(step, color, tail, originalImage):
   r, g, b = originalImage[x][y]
   cometDot(step-tail, (r, g, b))
 
+# Each span is a tuple (startTime, image, brightness).
+# Example:
+#   (07:00, 'morning.png', 0.3)
+#   (10:00, 'midday.png', 0.5)
+#   (17:00, 'afternoon.png', 0.3)
+#   (19:00, 'night.png', 0.1)
+#
+# Logic:
+#   Take current time
+#   If showClockTime has elapsed, show the clock.
+#   Find last entry in list that is BEFORE the current time.
+#     (If first entry is after current time, use last list entry.)
+#   Set image/brightness to the corresponding entry.
 
-def doClock(clock, dayImage, nightImage, wakeupTime, bedTime, stepTime=0.04):
+def doClock(clock, spans, stepTime=0.04, showClockTime=datetime.timedelta(seconds=60)):
   tick = 0
   prev = datetime.datetime.fromtimestamp(0)
   while True:
     if tick == 0:
       today = clock.today().replace(hour=0, minute=0, second=0, microsecond=0).date()
-      wakeup = clock.combine(today, wakeupTime)
-      sleepy = clock.combine(today, bedTime)
+      #wakeup = clock.combine(today, wakeupTime)
+      #sleepy = clock.combine(today, bedTime)
       now = clock.now()
 
       # Every minute, show the time
-      if now - prev >= datetime.timedelta(seconds=60):
+      if now - prev >= showClockTime:
         showTime(now)
         prev = now
 
-      # Note: This logic assumes two things:
-      #  (1) wakeup < sleepy, AND
-      #  (2) midnight comes between sleepy and wakeup.
-      if now > wakeup and now < sleepy:
-        curImage = showImage(dayImage)
-      elif now > sleepy:
-        curImage = showImage(nightImage)
-      elif now < wakeup:
-        curImage = showImage(nightImage)
+      curSpan = None
+      for (startTime, image, brightness) in spans:
+        st = clock.combine(today, startTime)
+        print 'st: ' + str(st)
+        print 'now: ' + str(now)
+        if st < now:
+          curSpan = (startTime, image, brightness)
+          print 'Setting curSpan to %s' % str(curSpan)
+      if curSpan is None:
+        print 'Setting curSpan to last entry'
+        curSpan = spans[-1]
+
+      (_, image, brightness) = curSpan
+      curImage = showImage(image)
+      unicorn.brightness(brightness)
 
     drawComet(tick, (255, 0, 0), 20, curImage)
     tick += 1
-    if (tick >= (width*4)-3):
+    if (tick >= (width*4)-3):  # That is, has gone all the way around.
       tick = 0
 
     time.sleep(stepTime)
@@ -245,19 +263,24 @@ def showTime(dt=datetime.datetime.now()):
   if hour > 12:
     hour -= 12
   bitmaps = []
+  bitmaps.append(digits.stringToBitmap(digits.space))
+  bitmaps.append(digits.stringToBitmap(digits.space))
   bitmaps.extend(digits.getBitmap('%02d' % hour))
   bitmaps.append(digits.stringToBitmap(digits.colon))
   bitmaps.extend(digits.getBitmap('%02d' % minute))
   bitmaps.append(digits.stringToBitmap(digits.colon))
   bitmaps.extend(digits.getBitmap('%02d' % second))
   bitmap = combineBitmaps(bitmaps)
-  scroll(bitmap, (0, 0, 255), 0.06, 5)
+  scroll(bitmap, (0, 255, 0), 0.06, 5)
 
 
 def main():
-  doClock(
-      datetime.datetime, 'bb82.png', 'stormtrooper3.png',
-      datetime.time(7, 00, 00), datetime.time(19, 00, 0))
+
+  spans = [
+      (datetime.time(07, 00, 00), 'bb82.png', 0.3),
+      (datetime.time(19, 30, 00), 'stormtrooper3.png', 0.05),
+  ]
+  doClock(datetime.datetime, spans)
 
   while True:
     unicorn.show()
