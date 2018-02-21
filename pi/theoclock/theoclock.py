@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 import copy
 import datetime
@@ -273,6 +273,19 @@ def showTime(dt=datetime.datetime.now()):
   bitmap = combineBitmaps(bitmaps)
   scroll(bitmap, (0, 255, 0), 0.06, 5)
 
+# Each span is a tuple (startTime, image, brightness).
+# Example:
+#   (07:00, 'morning.png', 0.3)
+#   (10:00, 'midday.png', 0.5)
+#   (17:00, 'afternoon.png', 0.3)
+#   (19:00, 'night.png', 0.1)
+def showSpans(spans):
+  for (startTime, image, brightness) in spans:
+    showTime(startTime)
+    curImage = showImage(image)
+    unicorn.brightness(brightness)
+    unicorn.show()
+    time.sleep(3)
 
 def main():
 
@@ -280,6 +293,7 @@ def main():
       (datetime.time(07, 00, 00), 'bb82.png', 0.3),
       (datetime.time(19, 30, 00), 'stormtrooper3.png', 0.05),
   ]
+  showSpans(spans)
   doClock(datetime.datetime, spans)
 
   while True:
