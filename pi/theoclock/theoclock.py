@@ -177,8 +177,6 @@ def doClock(clock, spans, stepTime=0.04, showClockTime=datetime.timedelta(second
   while True:
     if tick == 0:
       today = clock.today().replace(hour=0, minute=0, second=0, microsecond=0).date()
-      #wakeup = clock.combine(today, wakeupTime)
-      #sleepy = clock.combine(today, bedTime)
       now = clock.now()
 
       # Every minute, show the time
@@ -189,18 +187,14 @@ def doClock(clock, spans, stepTime=0.04, showClockTime=datetime.timedelta(second
       curSpan = None
       for (startTime, image, brightness) in spans:
         st = clock.combine(today, startTime)
-        print 'st: ' + str(st)
-        print 'now: ' + str(now)
         if st < now:
           curSpan = (startTime, image, brightness)
-          print 'Setting curSpan to %s' % str(curSpan)
       if curSpan is None:
-        print 'Setting curSpan to last entry'
         curSpan = spans[-1]
 
       (_, image, brightness) = curSpan
-      curImage = showImage(image)
       unicorn.brightness(brightness)
+      curImage = showImage(image)
 
     drawComet(tick, (255, 0, 0), 20, curImage)
     tick += 1
@@ -281,16 +275,15 @@ def showTime(dt=datetime.datetime.now()):
 #   (19:00, 'night.png', 0.1)
 def showSpans(spans):
   for (startTime, image, brightness) in spans:
+    unicorn.brightness(brightness)
     showTime(startTime)
     curImage = showImage(image)
-    unicorn.brightness(brightness)
     unicorn.show()
     time.sleep(3)
 
 def main():
-
   spans = [
-      (datetime.time(07, 00, 00), 'bb82.png', 0.3),
+      (datetime.time(7, 00, 00), 'bb82.png', 0.2),
       (datetime.time(19, 30, 00), 'stormtrooper3.png', 0.05),
   ]
   showSpans(spans)
