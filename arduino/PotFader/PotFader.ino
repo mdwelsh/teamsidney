@@ -1,18 +1,3 @@
-/*
-  Fade
-
-  This example shows how to fade an LED on pin 9 using the analogWrite()
-  function.
-
-  The analogWrite() function uses PWM, so if you want to change the pin you're
-  using, be sure to use another PWM capable pin. On most Arduino, the PWM pins
-  are identified with a "~" sign, like ~3, ~5, ~6, ~9, ~10 and ~11.
-
-  This example code is in the public domain.
-
-  http://www.arduino.cc/en/Tutorial/Fade
-*/
-
 int redPin = 3;
 int greenPin = 5;
 int bluePin = 6;
@@ -25,6 +10,7 @@ int blue = 0;
 
 // the setup routine runs once when you press reset:
 void setup() {
+  pinMode(LED_BUILTIN, OUTPUT);
   pinMode(redPin, OUTPUT);
   pinMode(greenPin, OUTPUT);
   pinMode(bluePin, OUTPUT);
@@ -32,28 +18,91 @@ void setup() {
   pinMode(A1, INPUT);
 }
 
+typedef struct RgbColor
+{
+    unsigned char r;
+    unsigned char g;
+    unsigned char b;
+} RgbColor;
+
+typedef struct HsvColor
+{
+    unsigned char h;
+    unsigned char s;
+    unsigned char v;
+} HsvColor;
+
+// Borrowed from:
+// https://stackoverflow.com/questions/3018313/algorithm-to-convert-rgb-to-hsv-and-hsv-to-rgb-in-range-0-255-for-both
+struct RgbColor HsvToRgb(struct HsvColor hsv)
+{
+    RgbColor rgb;
+    unsigned char region, remainder, p, q, t;
+
+    if (hsv.s == 0)
+    {
+        rgb.r = hsv.v;
+        rgb.g = hsv.v;
+        rgb.b = hsv.v;
+        return rgb;
+    }
+
+    region = hsv.h / 43;
+    remainder = (hsv.h - (region * 43)) * 6; 
+
+    p = (hsv.v * (255 - hsv.s)) >> 8;
+    q = (hsv.v * (255 - ((hsv.s * remainder) >> 8))) >> 8;
+    t = (hsv.v * (255 - ((hsv.s * (255 - remainder)) >> 8))) >> 8;
+
+    switch (region)
+    {
+        case 0:
+            rgb.r = hsv.v; rgb.g = t; rgb.b = p;
+            break;
+        case 1:
+            rgb.r = q; rgb.g = hsv.v; rgb.b = p;
+            break;
+        case 2:
+            rgb.r = p; rgb.g = hsv.v; rgb.b = t;
+            break;
+        case 3:
+            rgb.r = p; rgb.g = q; rgb.b = hsv.v;
+            break;
+        case 4:
+            rgb.r = t; rgb.g = p; rgb.b = hsv.v;
+            break;
+        default:
+            rgb.r = hsv.v; rgb.g = p; rgb.b = q;
+            break;
+    }
+
+    return rgb;
+}
+
 // the loop routine runs over and over again forever:
 void loop() {
   colorPot = analogRead(A0);
   dimPot = analogRead(A1);
-  
-  if (colorPot < 100) {
-    red = constrain(colorPot, 0, 255);
-  }
-  if (colorPot < 300) {
-    green = constrain(colorPot-100, 0, 255);
-  }
-  if (colorPot < 500) {
-    blue = constrain(colorPot-300, 0, 255);
-  }
 
-  red = red * (dimPot / 1024.0);
-  green = green * (dimPot / 1024.0);
-  blue = blue * (dimPot / 1024.0);
+  int hue = colorPot;
+  HsvColor hsv;
+  hsv.h = hue;
+  hsv.s = 255;
+  hsv.v = constrain(dimPot/4, 0, 255);
+
+  RgbColor rgb = HsvToRgb(hsv);
+  
+  red = rgb.r;
+  green = rgb.g;
+  blue = rgb.b;
 
   analogWrite(redPin, red);
   analogWrite(greenPin, green);
   analogWrite(bluePin, blue);
 
-  
+  digitalWrite(LED_BUILTIN, HIGH);   // turn the LED on (HIGH is the voltage level)
+  delay(10);                       // wait for a second
+  digitalWrite(LED_BUILTIN, LOW);    // turn the LED off by making the voltage LOW
+  delay(100);
+
 }
