@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 import copy
 import datetime
@@ -157,6 +157,17 @@ def drawComet(step, color, tail, originalImage):
   r, g, b = originalImage[x][y]
   cometDot(step-tail, (r, g, b))
 
+def blinkEye(step, lightColor, darkColor, x, y):
+  maxStep = (width*4)-3
+  phase = step % maxStep
+  if phase < (maxStep/2):
+    fade = phase / (maxStep/2.)
+  else:
+    fade = 1.0 - ((phase-(maxStep/2)) / (maxStep/2.))
+
+  r, g, b = interpolate(lightColor, darkColor, fade)
+  setPixel(x, y, r, g, b)
+
 # Each span is a tuple (startTime, image, brightness).
 # Example:
 #   (07:00, 'morning.png', 0.3)
@@ -196,7 +207,8 @@ def doClock(clock, spans, stepTime=0.04, showClockTime=datetime.timedelta(second
       unicorn.brightness(brightness)
       curImage = showImage(image)
 
-    drawComet(tick, (255, 0, 0), 20, curImage)
+#    drawComet(tick, (255, 0, 0), 20, curImage)
+    blinkEye(tick, (255, 0, 0), (20, 0, 0), 10, 3)
     tick += 1
     if (tick >= (width*4)-3):  # That is, has gone all the way around.
       tick = 0
@@ -282,9 +294,13 @@ def showSpans(spans):
     time.sleep(3)
 
 def main():
+#  spans = [
+#      (datetime.time(7, 00, 00), 'bb82.png', 0.2),
+#      (datetime.time(19, 30, 00), 'stormtrooper3.png', 0.05),
+#  ]
   spans = [
-      (datetime.time(7, 00, 00), 'bb82.png', 0.2),
-      (datetime.time(19, 30, 00), 'stormtrooper3.png', 0.05),
+      (datetime.time(7, 00, 00), 'bb9e-day.png', 0.02),
+      (datetime.time(19, 00, 00), 'bb9e-night.png', 0.02),
   ]
   showSpans(spans)
   doClock(datetime.datetime, spans)

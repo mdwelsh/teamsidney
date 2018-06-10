@@ -33,48 +33,48 @@ def phase1():
 
 
 def phase2():
-  pw = 'Team'
-  pw += ' '
-  pw += 'Sidney'
+  password = 'Team'
+  password += ' '
+  password += 'Sidney'
   input = readline('Phase 2')
-  if input != pw:
+  if input != password:
     kabloom()
 
 
 def phase3():
-  pw = ''
+  password = ''
   for i in range(5):
-    pw += str(i)
+    password += str(i)
   input = readline('Phase 3')
-  if input != pw:
+  if input != password:
     kabloom()
 
 
 def phase4():
-  a = 'happyboogers'
-  pw = a[5:11]
+  foo = 'happyboogers'
+  password = foo[5:11]
   input = readline('Phase 4')
-  if input != pw:
+  if input != password:
     kabloom()
 
 
 def phase5():
-  a = 'namohcan'
-  x = len(a)-1
-  pw = ''
+  foo = 'namohcan'
+  x = len(foo)-1    # 7
+  password = ''
   while x >= 0:
-    pw += a[x]
+    password += foo[x]
     x -= 1
   input = readline('Phase 5')
-  if input != pw:
+  if input != password:
     kabloom()
 
 
 def phase6():
   stuff = ['some', 'words', 'chicken', 'mooshroom', 'pickaxe', 'redstone']
-  pw = stuff[0] + ' ' + stuff[5] + ' ' + stuff[2]
+  password = stuff[0] + ' ' + stuff[5] + ' ' + stuff[2]
   input = readline('Phase 6')
-  if input != pw:
+  if input != password:
     kabloom()
 
 
@@ -85,10 +85,10 @@ def phase7():
   dic['sharks'] = 'people'
   dic['chewbacca'] = 'porgs'
 
-  pw = ''
-  pw = dic['chewbacca'] + ' ' + dic['chickens']
+  password = ''
+  password = dic['chewbacca'] + ' ' + dic['chickens']
   input = readline('Phase 7')
-  if input != pw:
+  if input != password:
     kabloom()
 
 
@@ -100,9 +100,9 @@ def moo(num):
 
 
 def phase8():
-  pw = moo(4)
+  password = moo(4)
   input = readline('Phase 8')
-  if input != pw:
+  if input != password:
     kabloom()
 
 
@@ -114,16 +114,16 @@ def phase9():
       count += 1
     elif string[i] == 'e':
       count -= 1
-  pw = str(count)
+  password = str(count)
   input = readline('Phase 9')
-  if input != pw:
+  if input != password:
     kabloom()
 
 
 def phase10():
-  pw = str(6 * 7)
+  password = str(6 * 7)
   input = readline('Phase 10')
-  if input != pw:
+  if input != password:
     kabloom()
 
 
