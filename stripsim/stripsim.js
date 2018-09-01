@@ -13,8 +13,8 @@ const worldHeight = window.innerHeight * window.devicePixelRatio;
 const ledSize = 10;
 const ledGap = 15;
 const stripGap = 20;
-const numStrips = 100;
-const ledsPerStrip = 100;
+const numStrips = 10;
+const ledsPerStrip = 50;
 
 const slowMotion = 1.0;
 
@@ -65,7 +65,15 @@ function pauseGame() {
   }
 }
 
+var sweepColors = [];
+
 function makeStrips() {
+  if (sweepColors.length == 0) {
+    for (y = 0; y < numStrips; y++) {
+      sweepColors[y] = Math.random() * 0xffffff;
+    }
+  }
+
   strips = [];
   for (i = 0; i < numStrips; i++) {
     var strip = [];
@@ -102,6 +110,12 @@ function setLed(x, y, c) {
 }
 
 function getLed(x, y) {
+  if (x < 0 || x >= ledsPerStrip) {
+    return null;
+  }
+  if (y < 0 || y >= numStrips) {
+    return null;
+  }
   return strips[y][x];
 }
 
@@ -137,18 +151,34 @@ function spackle() {
   setLed(x, y, 0xff0000);
 }
 
-var sweepColors = [];
-function updateLeds() {
-  if (sweepColors.length == 0) {
-    for (y = 0; y < numStrips; y++) {
-      sweepColors[y] = Math.random() * 0xffffff;
+var initialized = false;
+function initializeLeds() {
+  for (y = 0; y < numStrips; y++) {
+    for (i = 0; i < getRandomInt(1, 3); i++) { 
+      var s = getRandomInt(0, ledsPerStrip);
+      //var dir = (Math.random() < 0.5) ? -1 : 1;
+      //sweep(s, dir, y, sweepColors[y], 4);
+      ignite(s, y);
     }
   }
-  for (y = 0; y < numStrips; y++) {
-    var s = getRandomInt(0, ledsPerStrip);
-    var dir = (Math.random() < 0.5) ? -1 : 1;
-    sweep(s, dir, y, sweepColors[y], 4);
+}
+
+function updateLeds() {
+  if (!initialized) {
+    initializeLeds();
+    initialized = true;
   }
+
+  for (y = 0; y < numStrips; y++) {
+    for (x = 0; x < ledsPerStrip; x++) {
+      var led = getLed(x, y);
+      updateLed(x, y);
+    }
+  }
+}
+
+function updateLed(x, y) {
+  flicker(x, y);
 }
 
 function interpolate(c1, c2, weight) {
@@ -192,5 +222,51 @@ function sweep(start, dir, y, color, steps) {
     sweepTick[y] = ledsPerStrip - 1;
     sweepDir[y] = -1;
   }
+}
+
+var flameColors = [
+  [ 0x0, 0x100000, 0x773C00, 0x907403 ],
+  [ 0x402000, 0xa05000, 0xC9A103, 0xDFDF1B ],
+  [ 0xc06000, 0xF3F309, 0xFD9833, 0xD07A24 ],
+];
+
+function flicker(x, y) {
+  led = getLed(x, y);
+  if (led._flameState == null) {
+    return;
+  }
+  var fs = led._flameState;
+  if (Math.random() > 0.05) {
+    return;
+  }
+  // Change the color.
+  var level = fs.level;
+  var colors = flameColors[level];
+  var c = colors[getRandomInt(0, colors.length)];
+  setLed(x, y, c);
+
+  // Maybe increase level.
+  if (++fs.tick > 10 && Math.random() > 0.3) {
+    fs.level++;
+    if (fs.level >= flameColors.length) {
+      fs.level = flameColors.length-1;
+    }
+    if (fs.level > 1) {
+      ignite(x-1, y);
+      ignite(x+1, y);
+    }
+    fs.tick = 0;
+  }
+}
+
+function ignite(x, y) {
+  var led = getLed(x, y);
+  if (led == null) {
+    return;
+  }
+  if (led._flameState != null) {
+    return;
+  }
+  led._flameState = { level: 0, tick: 0 };
 }
 
