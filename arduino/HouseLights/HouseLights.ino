@@ -31,6 +31,7 @@ void loop() {
 
         USE_SERIAL.print("MDW: MAC address is ");
         USE_SERIAL.print(WiFi.macAddress());
+        USE_SERIAL.print("\n");
 
         HTTPClient http;
 
