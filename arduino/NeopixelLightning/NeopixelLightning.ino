@@ -3,7 +3,7 @@
 #include <avr/power.h>
 #endif
 
-#define NEOPIXEL_PIN 6
+#define NEOPIXEL_PIN 14
 #define POT1_PIN A0
 #define POT2_PIN A1
 #define BUTTON1_PIN A2
@@ -21,7 +21,7 @@ class Firework {
     }
     Firework() {}
 
-    update() {
+    void update() {
       step += 1;
       if (step <= width) {
         for (int i = 0; i < step; i++) {
@@ -74,17 +74,17 @@ void setup() {
 #endif
   // End of trinket special code
 
-  pinMode(POT1_PIN, INPUT);
-  pinMode(POT2_PIN, INPUT);
-  pinMode(BUTTON1_PIN, INPUT);
-  pinMode(MIC_PIN, INPUT);
+ // pinMode(POT1_PIN, INPUT);
+ // pinMode(POT2_PIN, INPUT);
+ // pinMode(BUTTON1_PIN, INPUT);
+ // pinMode(MIC_PIN, INPUT);
 
   strip.begin();
   strip.show(); // Initialize all pixels to 'off'
   strip.setBrightness(brightness);
 
-//  f = Firework(&strip, 20, 0xa00080, 10);
-  colorWipe(0xff0000, 10);
+  f = Firework(&strip, 20, 0xa00080, 10);
+  //colorWipe(0xff0000, 10);
 
 
 }
@@ -127,7 +127,8 @@ Firework fireworks[NUM_FIREWORKS];
 int num_fireworks = 0;
 
 void loop() {
- 
+   return;
+   /*
   //int pot1 = analogRead(POT1_PIN);
   int pot1 = analogRead(MIC_PIN);
   int pot2 = analogRead(POT2_PIN);
@@ -151,9 +152,10 @@ void loop() {
     strip.setPixelColor(i, 0);
   }
   strip.show();
- 
+   */
 
-  /*
+   
+
   if (num_fireworks < NUM_FIREWORKS && random(100) < 10) {
     fireworks[num_fireworks] = Firework(&strip, random(10, strip.numPixels() - 10), Wheel(random(0, 255)), random(2, 5));
     num_fireworks++;
@@ -162,7 +164,7 @@ void loop() {
     fireworks[i].update();
   }
   delay(100);
-  */
+
 }
 
 // Fill the dots one after the other with a color
