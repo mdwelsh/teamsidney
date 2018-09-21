@@ -53,7 +53,6 @@ void flashLed() {
 }
 
 
-// Fill the dots one after the other with a color
 void colorWipe(uint32_t c, uint8_t wait) {
   for(uint16_t i=0; i<strip.numPixels(); i++) {
     strip.setPixelColor(i, c);
@@ -79,7 +78,6 @@ void rainbow(uint8_t wait) {
   }
 }
 
-// Slightly different, this makes the rainbow equally distributed throughout
 void rainbowCycle(uint8_t wait) {
   uint16_t i, j;
 
@@ -92,7 +90,6 @@ void rainbowCycle(uint8_t wait) {
   }
 }
 
-//Theatre-style crawling lights.
 void theaterChase(uint32_t c, uint8_t wait) {
   for (int j=0; j<1000; j++) {  //do 10 cycles of chasing
     for (int q=0; q < 3; q++) {
@@ -110,7 +107,6 @@ void theaterChase(uint32_t c, uint8_t wait) {
   }
 }
 
-//Theatre-style crawling lights with rainbow effect
 void theaterChaseRainbow(uint8_t wait) {
   for (int j=0; j < 256; j++) {     // cycle all 256 colors in the wheel
     for (int q=0; q < 3; q++) {
@@ -236,31 +232,37 @@ uint32_t Wheel(byte WheelPos) {
   return strip.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
 }
 
-void runConfig() {
-  //curMode = "wipe";
-  USE_SERIAL.println("Running mode: \"" + curMode + "\"");
-  if (curMode == "\"none\"" || curMode == "\"off\"") {
+// Run the current config.
+void runConfig() {o
+  JsonObject cc = curConfigDocument.to<JsonObject>();
+  String mode = cc["mode"];
+  int speed = cc["speed"];
+  int brightness = cc["brightness"];
+  int red = cc["red"];
+  int green = cc["green"];
+  int blue = cc["blue"];
+
+  strip.setBrightness(brightness);
+
+  USE_SERIAL.println("Running mode: \"" + mode + "\"");
+  if (mode == "none" || mode == "off") {
     colorWipe(strip.Color(0, 0, 0), 10);
-  } else if (curMode.equals("\"wipered\"")) {
-    colorWipe(strip.Color(255, 0, 0), 10);
-  } else if (curMode.equals("\"wipegreen\"")) {
-    colorWipe(strip.Color(0, 255, 0), 10);
-  } else if (curMode.equals("\"wipeblue\"")) {
-    colorWipe(strip.Color(0, 0, 255), 10);
-  } else if (curMode.equals("\"theaterOrange\"")) {
-    theaterChase(strip.Color(0xff, 0x35, 0x00), 100);
-  } else if (curMode.equals("\"rainbow\"")) {
-    rainbow(10);
-  } else if (curMode.equals("\"rainbowcycle\"")) {
-    rainbowCycle(10);
-  } else if (curMode.equals("\"spackle\"")) {
-    spackle(10000, 50, 20);
-  } else if (curMode.equals("\"fire\"")) {
-    fire(1000, 100);
-  } else if (curMode.equals("\"bounce\"")) {
-    bounce(0xff0000, 7);
+  } else if (mode == "wipe") {
+    colorWipe(strip.Color(red, green, blue), speed);
+  } else if (mode == "theater") {
+    theaterChase(strip.Color(red, green, blue), speed);
+  } else if (mode == "rainbow") {
+    rainbow(speed);
+  } else if (mode == "rainbowCycle") {
+    rainbowCycle(speed);
+  } else if (mode == "spackle") {
+    spackle(10000, 50, speed);
+  } else if (mode == "fire") {
+    fire(1000, speed);
+  } else if (mode == "bounce") {
+    bounce(strip.Color(red, green, blue), speed);
   } else {
-    USE_SERIAL.println("Unknown mode: " + curMode);
+    USE_SERIAL.println("Unknown mode: " + mode);
   }
   strip.show();
 }
@@ -273,7 +275,7 @@ void checkin() {
   USE_SERIAL.print("\n");
 
   String url = "https://team-sidney.firebaseio.com/checkin/" + WiFi.macAddress() + ".json";
-  //http.begin(url);
+  http.begin(url);
 
   String curModeJson;
   StaticJsonDocument<512> checkinDoc;
@@ -303,8 +305,8 @@ void checkin() {
   
   USE_SERIAL.print("[HTTP] PUT " + url + "\n");
   USE_SERIAL.print(payload + "\n");
-  /*
-   * int httpCode = http.PUT(payload);
+  
+  int httpCode = http.PUT(payload);
 
   if (httpCode > 0) {
     USE_SERIAL.printf("[HTTP] Response code: %d\n", httpCode);
@@ -314,7 +316,6 @@ void checkin() {
     USE_SERIAL.printf("[HTTP] failed, error: %s\n", http.errorToString(httpCode).c_str());
   }
   http.end();
-  */
 }
 
 void readConfig() {
@@ -341,6 +342,10 @@ void readConfig() {
   // For testing.
   String output;
   serializeJson(curConfigDocument, Serial);
+
+  // XXX MDW HACKING
+  JsonObject obj = curConfigDocument.as<JsonObject>();
+  USE_SERIAL.println(obj["hithere"]);  
 
   http.end();
 }
