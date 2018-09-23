@@ -1,10 +1,20 @@
+/* Blinky - Team Sidney Enterprises
+ * Author: Matt Welsh <mdw@mdw.la>
+ * 
+ * This sketch controls a Feather Huzzah32 board with an attached Neopixel or Dotstar LED strip.
+ * It periodically checks in by writing a record to a Firebase database, and reads a config from
+ * the database to control the LED pattern.
+ */
+
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <freertos/task.h>
 
-/* Uncomment for NeoPixel */
-// #include <Adafruit_NeoPixel.h>
-/* Uncomment for DotStar */
+#ifdef USE_NEOPIXEL
+#include <Adafruit_NeoPixel.h>
+#else
 #include <Adafruit_DotStar.h>
+#endif
 
 #include <WiFi.h>
 #include <WiFiMulti.h>
@@ -17,33 +27,50 @@
 #define DOTSTAR_DATA_PIN 14
 #define DOTSTAR_CLOCK_PIN 32
 
-//Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUMPIXELS, NEOPIXEL_DATA_PIN, NEO_GRB + NEO_KHZ800);
+#ifdef USE_NEOPIXEL
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUMPIXELS, NEOPIXEL_DATA_PIN, NEO_GRB + NEO_KHZ800);
+#else
 Adafruit_DotStar strip = Adafruit_DotStar(NUMPIXELS, DOTSTAR_DATA_PIN, DOTSTAR_CLOCK_PIN, DOTSTAR_BGR);
+#endif
 
 WiFiMulti wifiMulti;
 HTTPClient http;
-String curMode;
+
 StaticJsonDocument<512> curConfigDocument;
+#define MAX_MODE_LEN 16
+String configMode;
+int configBrightness;
+int configSpeed;
+int configRed;
+int configBlue;
+int configGreen;
+
+SemaphoreHandle_t configMutex = NULL;
+void TaskFlash(void *);
+void TaskCheckin(void *);
+void TaskRunConfig(void *);
 
 void setup() {
   strip.begin();
   strip.setBrightness(20);
-  //strip.show(); // Initialize all pixels to 'off'
-  
-  curMode = String("none");
+
+  configMode.reserve(32);
   pinMode(LED_BUILTIN, OUTPUT);
 
   USE_SERIAL.begin(115200);
-  USE_SERIAL.println();
-  USE_SERIAL.println();
-  USE_SERIAL.println();
   for (uint8_t t = 4; t > 0; t--) {
     USE_SERIAL.printf("[SETUP] WAIT %d...\n", t);
     USE_SERIAL.flush();
     delay(1000);
   }
   wifiMulti.addAP("theonet", "juneaudog");
+
+  configMutex = xSemaphoreCreateMutex();
+  xTaskCreate(TaskFlash, (const char *)"Flash LED", 512, NULL, 2, NULL);
+  xTaskCreate(TaskCheckin, (const char *)"Checkin", 1024*40, NULL, 1, NULL);
+  xTaskCreate(TaskRunConfig, (const char *)"Run config", 4096, NULL, 2, NULL);
 }
+
 
 void flashLed() {
   digitalWrite(LED_BUILTIN, HIGH);
@@ -51,7 +78,6 @@ void flashLed() {
   digitalWrite(LED_BUILTIN, LOW);
   delay(100);
 }
-
 
 void colorWipe(uint32_t c, uint8_t wait) {
   for(uint16_t i=0; i<strip.numPixels(); i++) {
@@ -233,46 +259,40 @@ uint32_t Wheel(byte WheelPos) {
 }
 
 // Run the current config.
-void runConfig() {o
-  JsonObject cc = curConfigDocument.to<JsonObject>();
-  String mode = cc["mode"];
-  int speed = cc["speed"];
-  int brightness = cc["brightness"];
-  int red = cc["red"];
-  int green = cc["green"];
-  int blue = cc["blue"];
-
-  strip.setBrightness(brightness);
-
-  USE_SERIAL.println("Running mode: \"" + mode + "\"");
-  if (mode == "none" || mode == "off") {
+void runConfig() {
+  USE_SERIAL.println("runConfig called, mode is "+configMode);
+  
+  strip.setBrightness(configBrightness);
+  if (configMode == "none" || configMode == "off") {
     colorWipe(strip.Color(0, 0, 0), 10);
-  } else if (mode == "wipe") {
-    colorWipe(strip.Color(red, green, blue), speed);
-  } else if (mode == "theater") {
-    theaterChase(strip.Color(red, green, blue), speed);
-  } else if (mode == "rainbow") {
-    rainbow(speed);
-  } else if (mode == "rainbowCycle") {
-    rainbowCycle(speed);
-  } else if (mode == "spackle") {
-    spackle(10000, 50, speed);
-  } else if (mode == "fire") {
-    fire(1000, speed);
-  } else if (mode == "bounce") {
-    bounce(strip.Color(red, green, blue), speed);
+    delay(1000);
+  } else if (configMode == "wipe") {
+    colorWipe(strip.Color(configRed, configGreen, configBlue), configSpeed);
+  } else if (configMode == "theater") {
+    theaterChase(strip.Color(configRed, configGreen, configBlue), configSpeed);
+  } else if (configMode == "rainbow") {
+    rainbow(configSpeed);
+  } else if (configMode == "rainbowCycle") {
+    rainbowCycle(configSpeed);
+  } else if (configMode == "spackle") {
+    spackle(10000, 50, configSpeed);
+  } else if (configMode == "fire") {
+    fire(1000, configSpeed);
+  } else if (configMode == "bounce") {
+    bounce(strip.Color(configRed, configGreen, configBlue), configSpeed);
   } else {
-    USE_SERIAL.println("Unknown mode: " + mode);
+    USE_SERIAL.println("Unknown mode: " + configMode);
+    colorWipe(strip.Color(0, 0, 0), 10);
+    delay(1000);
   }
   strip.show();
 }
 
 void checkin() {
-  USE_SERIAL.print("MDW: MAC address is ");
-  USE_SERIAL.print(WiFi.macAddress());
-  USE_SERIAL.print("\nMDW: IP address is ");
-  USE_SERIAL.print(WiFi.localIP().toString());
-  USE_SERIAL.print("\n");
+  USE_SERIAL.print("MAC address ");
+  USE_SERIAL.println(WiFi.macAddress());
+  USE_SERIAL.print("IP address is ");
+  USE_SERIAL.println(WiFi.localIP().toString());
 
   String url = "https://team-sidney.firebaseio.com/checkin/" + WiFi.macAddress() + ".json";
   http.begin(url);
@@ -287,16 +307,8 @@ void checkin() {
   checkinPayload["mac"] = WiFi.macAddress();
   checkinPayload["ip"] = WiFi.localIP().toString();
 
-  USE_SERIAL.println("\nCurrent config doc at checkin:");
-  serializeJson(curConfigDocument, Serial);
-  USE_SERIAL.print("\n");
-  
-  JsonObject curConfig = curConfigDocument.as<JsonObject>();
-  USE_SERIAL.println("\nCurrent config at checkin:");
-  serializeJson(curConfig, Serial);
-  USE_SERIAL.print("\n");
-  
- if (!curConfig.isNull()) {
+  JsonObject curConfig = curConfigDocument.as<JsonObject>(); 
+  if (!curConfig.isNull()) {
    JsonObject checkinConfig = checkinPayload.createNestedObject("config");
    checkinConfig.copyFrom(curConfig);
   }
@@ -307,7 +319,6 @@ void checkin() {
   USE_SERIAL.print(payload + "\n");
   
   int httpCode = http.PUT(payload);
-
   if (httpCode > 0) {
     USE_SERIAL.printf("[HTTP] Response code: %d\n", httpCode);
     String payload = http.getString();
@@ -319,12 +330,13 @@ void checkin() {
 }
 
 void readConfig() {
+  USE_SERIAL.println("readConfig called");
+  
   String url = "https://team-sidney.firebaseio.com/strips/" + WiFi.macAddress() + ".json";
   http.begin(url);
 
   USE_SERIAL.print("[HTTP] GET " + url + "\n");
   int httpCode = http.GET();
-
   if (httpCode <= 0) {
     USE_SERIAL.printf("[HTTP] failed, error: %s\n", http.errorToString(httpCode).c_str());
     return;
@@ -336,45 +348,51 @@ void readConfig() {
 
   // Parse JSON config.
   DeserializationError err = deserializeJson(curConfigDocument, payload);
-  USE_SERIAL.print("DESERIALIZE error: ");
+  USE_SERIAL.print("Deserialize returned: ");
   USE_SERIAL.println(err.c_str());
 
-  // For testing.
-  String output;
-  serializeJson(curConfigDocument, Serial);
-
-  // XXX MDW HACKING
-  JsonObject obj = curConfigDocument.as<JsonObject>();
-  USE_SERIAL.println(obj["hithere"]);  
+  JsonObject cc = curConfigDocument.as<JsonObject>();
+  configMode = (const String &)cc["mode"];
+  configSpeed = cc["speed"];
+  configBrightness = cc["brightness"];
+  configRed = cc["red"];
+  configGreen = cc["green"];
+  configBlue = cc["blue"];
 
   http.end();
 }
 
-
-bool initialized = false;
-bool connected = false;
-
-void loop() {
-  if (!initialized) {
-    initialized = true;
-    colorWipe(strip.Color(0, 0, 255), 10);
-    delay(1000);
+/* Task to flash onboard LED. */
+void TaskFlash(void *pvParameters) {
+  for (;;) {
+    flashLed();
+    vTaskDelay(100 / portTICK_PERIOD_MS);
   }
-  if ((wifiMulti.run() != WL_CONNECTED)) {
-    colorWipe(strip.Color(255, 0, 0), 10);
-    delay(1000);
-    return;
-  } else {
-    if (!connected) {
-      connected = true;
-      colorWipe(strip.Color(0, 255, 0), 10);
-      delay(1000);
-    }
-  }
-  
-  flashLed();
-  checkin();
-  readConfig();
-  //runConfig();
-  delay(10 * 1000);
 }
+
+/* Task to periodically checkin and read new config. */
+void TaskCheckin(void *pvParameters) {
+  for (;;) {
+    if ((wifiMulti.run() == WL_CONNECTED)) {
+      if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
+        checkin();
+        readConfig();
+        xSemaphoreGive(configMutex);
+      }
+    }
+    vTaskDelay(2000 / portTICK_PERIOD_MS);
+  }
+}
+
+/* Task to run current LED config. */
+void TaskRunConfig(void *pvParameters) {
+  for (;;) {
+    if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
+      runConfig();
+      xSemaphoreGive(configMutex);
+    }
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+  }
+}
+
+void loop() {}
