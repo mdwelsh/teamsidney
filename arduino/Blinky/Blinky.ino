@@ -10,6 +10,8 @@
 #include <ArduinoJson.h>
 #include <freertos/task.h>
 
+#define USE_NEOPIXEL
+
 #ifdef USE_NEOPIXEL
 #include <Adafruit_NeoPixel.h>
 #else
@@ -22,7 +24,7 @@
 
 #define USE_SERIAL Serial
 
-#define NUMPIXELS 120
+#define NUMPIXELS 60
 #define NEOPIXEL_DATA_PIN 14
 #define DOTSTAR_DATA_PIN 14
 #define DOTSTAR_CLOCK_PIN 32
@@ -53,6 +55,8 @@ void TaskRunConfig(void *);
 void setup() {
   strip.begin();
   strip.setBrightness(20);
+  strip.show();
+  black();
 
   configMode.reserve(32);
   pinMode(LED_BUILTIN, OUTPUT);
@@ -66,17 +70,22 @@ void setup() {
   wifiMulti.addAP("theonet", "juneaudog");
 
   configMutex = xSemaphoreCreateMutex();
-  xTaskCreate(TaskFlash, (const char *)"Flash LED", 512, NULL, 2, NULL);
-  xTaskCreate(TaskCheckin, (const char *)"Checkin", 1024*40, NULL, 1, NULL);
-  xTaskCreate(TaskRunConfig, (const char *)"Run config", 4096, NULL, 2, NULL);
+  xTaskCreate(TaskFlash, (const char *)"Flash LED", 1024*10, NULL, 1, NULL);
+  xTaskCreate(TaskCheckin, (const char *)"Checkin", 1024*40, NULL, 2, NULL);
+  xTaskCreate(TaskRunConfig, (const char *)"Run config", 1024*40, NULL, 3, NULL);
 }
-
 
 void flashLed() {
   digitalWrite(LED_BUILTIN, HIGH);
   delay(100);
   digitalWrite(LED_BUILTIN, LOW);
   delay(100);
+}
+
+void setAll(uint32_t c) {
+  for (int i = 0; i < strip.numPixels(); i++) {
+    strip.setPixelColor(i, c);
+  }
 }
 
 void colorWipe(uint32_t c, uint8_t wait) {
@@ -90,6 +99,57 @@ void colorWipe(uint32_t c, uint8_t wait) {
   if (wait == 0) {
     strip.show();
   }
+}
+
+// Set all pixels to black. I am not sure why the extra delays are needed, but this seems
+// to prevent spurious pixels from being shown.
+void black() {
+  delay(5);
+  for(int i = 0; i < NUMPIXELS; i++) {
+    strip.setPixelColor(i, 0);
+    strip.show();
+    delay(5);
+  }
+  strip.show();
+  strip.setBrightness(255); // This helps eliminate spurious pixels being lit while all black.
+  //strip.show();
+}
+
+uint32_t interpolate(uint32_t color1, uint32_t color2, float mix) {
+  uint32_t r1 = (color1 & 0xff0000) >> 16;
+  uint32_t r2 = (color2 & 0xff0000) >> 16;
+  uint32_t r3 = (uint32_t)(r1 * (1.0-mix)) + (uint32_t)(r2 * mix) << 16;
+
+  uint32_t g1 = (color1 & 0x00ff00) >> 8;
+  uint32_t g2 = (color2 & 0x00ff00) >> 8;
+  uint32_t g3 = (uint32_t)(g1 * (1.0-mix)) + (uint32_t)(g2 * mix) << 8;
+
+  uint32_t b1 = (color1 & 0x0000ff);
+  uint32_t b2 = (color2 & 0x0000ff);
+  uint32_t b3 = (uint32_t)(b1 * (1.0-mix)) + (uint32_t)(b2 * mix);
+
+  return r3 | g3 | b3;
+}
+
+void mixBetween(uint32_t color1, uint32_t color2, int numsteps, uint8_t wait) {
+  setAll(color1);
+  strip.show();
+  delay(wait);
+  float mix = 0.0;
+  for (mix = 0.0; mix < 1.0; mix += (1.0 / numsteps)) {
+    uint32_t tc = interpolate(color1, color2, mix);
+    setAll(tc);
+    strip.show();
+    delay(wait);
+  }
+  setAll(color2);
+  strip.show();
+  delay(wait);
+}
+
+void strobe(uint32_t c, int numsteps, uint8_t wait) {
+  mixBetween(0, c, numsteps/2, wait);
+  mixBetween(c, 0, numsteps/2, wait);
 }
 
 void rainbow(uint8_t wait) {
@@ -169,7 +229,6 @@ void spackle(uint8_t cycles, uint8_t maxSet, uint8_t wait) {
     strip.show();
     delay(wait);
   }
-  
 }
 
 void incrementFire(int index) {
@@ -242,7 +301,6 @@ void bounce(uint32_t color, int wait) {
   }
 }
 
-
 // Input a value 0 to 255 to get a color value.
 // The colours are a transition r - g - b - back to r.
 uint32_t Wheel(byte WheelPos) {
@@ -261,31 +319,65 @@ uint32_t Wheel(byte WheelPos) {
 // Run the current config.
 void runConfig() {
   USE_SERIAL.println("runConfig called, mode is "+configMode);
-  
-  strip.setBrightness(configBrightness);
-  if (configMode == "none" || configMode == "off") {
-    colorWipe(strip.Color(0, 0, 0), 10);
-    delay(1000);
-  } else if (configMode == "wipe") {
-    colorWipe(strip.Color(configRed, configGreen, configBlue), configSpeed);
-  } else if (configMode == "theater") {
-    theaterChase(strip.Color(configRed, configGreen, configBlue), configSpeed);
-  } else if (configMode == "rainbow") {
-    rainbow(configSpeed);
-  } else if (configMode == "rainbowCycle") {
-    rainbowCycle(configSpeed);
-  } else if (configMode == "spackle") {
-    spackle(10000, 50, configSpeed);
-  } else if (configMode == "fire") {
-    fire(1000, configSpeed);
-  } else if (configMode == "bounce") {
-    bounce(strip.Color(configRed, configGreen, configBlue), configSpeed);
+
+  String cMode;
+  uint32_t cColor;
+  int cBrightness, cSpeed;
+
+  // Read local copy of config to avoid holding mutex for too long.
+  if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
+    cMode = configMode;
+    cColor = strip.Color(configRed, configGreen, configBlue);
+    cBrightness = configBrightness;
+    cSpeed = configSpeed;
+    xSemaphoreGive(configMutex);
   } else {
-    USE_SERIAL.println("Unknown mode: " + configMode);
-    colorWipe(strip.Color(0, 0, 0), 10);
+    // Can't get mutex to read config, just bail.
+    USE_SERIAL.println("Warning - runConfig() unable to get config mutex.");
+  }
+  
+  if (cMode == "none" || cMode == "off") {
+    black();
+    delay(1000);
+    
+  } else if (cMode == "wipe") {
+    strip.setBrightness(cBrightness);
+    colorWipe(cColor, cSpeed);
+    colorWipe(0, cSpeed);
+    
+  } else if (cMode == "theater") {
+    strip.setBrightness(cBrightness);
+    theaterChase(cColor, cSpeed);
+    
+  } else if (cMode == "rainbow") {
+    strip.setBrightness(cBrightness);
+    rainbow(cSpeed);
+    
+  } else if (cMode == "rainbowCycle") {
+    strip.setBrightness(cBrightness);
+    rainbowCycle(cSpeed);
+    
+  } else if (cMode == "spackle") {
+    strip.setBrightness(cBrightness);
+    spackle(10000, 50, cSpeed);
+    
+  } else if (cMode == "fire") {
+    strip.setBrightness(cBrightness);
+    fire(1000, cSpeed);
+    
+  } else if (cMode == "bounce") {
+    strip.setBrightness(cBrightness);
+    bounce(cColor, cSpeed);
+    
+  } else if (cMode == "strobe") {
+    strip.setBrightness(cBrightness);
+    strobe(cColor, 10, cSpeed);
+
+  } else {
+    USE_SERIAL.println("Unknown mode: " + cMode);
+    black();
     delay(1000);
   }
-  strip.show();
 }
 
 void checkin() {
@@ -307,13 +399,20 @@ void checkin() {
   checkinPayload["mac"] = WiFi.macAddress();
   checkinPayload["ip"] = WiFi.localIP().toString();
 
-  JsonObject curConfig = curConfigDocument.as<JsonObject>(); 
-  if (!curConfig.isNull()) {
-   JsonObject checkinConfig = checkinPayload.createNestedObject("config");
-   checkinConfig.copyFrom(curConfig);
-  }
   String payload;
-  serializeJson(checkinPayload, payload);
+  if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
+    JsonObject curConfig = curConfigDocument.as<JsonObject>(); 
+    if (!curConfig.isNull()) {
+     JsonObject checkinConfig = checkinPayload.createNestedObject("config");
+     checkinConfig.copyFrom(curConfig);
+    }
+    serializeJson(checkinPayload, payload);
+    xSemaphoreGive(configMutex);
+  } else {
+    // Can't get lock to serialize current config, just bail out.
+    USE_SERIAL.println("Warning - checkin() unable to get config mutex.");
+    return;
+  }
   
   USE_SERIAL.print("[HTTP] PUT " + url + "\n");
   USE_SERIAL.print(payload + "\n");
@@ -341,23 +440,28 @@ void readConfig() {
     USE_SERIAL.printf("[HTTP] failed, error: %s\n", http.errorToString(httpCode).c_str());
     return;
   }
-
+  
   String payload = http.getString();
   USE_SERIAL.printf("[HTTP] Response code: %d\n", httpCode);
   USE_SERIAL.println(payload);
 
   // Parse JSON config.
-  DeserializationError err = deserializeJson(curConfigDocument, payload);
-  USE_SERIAL.print("Deserialize returned: ");
-  USE_SERIAL.println(err.c_str());
+  if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
+    DeserializationError err = deserializeJson(curConfigDocument, payload);
+    USE_SERIAL.print("Deserialize returned: ");
+    USE_SERIAL.println(err.c_str());
 
-  JsonObject cc = curConfigDocument.as<JsonObject>();
-  configMode = (const String &)cc["mode"];
-  configSpeed = cc["speed"];
-  configBrightness = cc["brightness"];
-  configRed = cc["red"];
-  configGreen = cc["green"];
-  configBlue = cc["blue"];
+    JsonObject cc = curConfigDocument.as<JsonObject>();
+    configMode = (const String &)cc["mode"];
+    configSpeed = cc["speed"];
+    configBrightness = cc["brightness"];
+    configRed = cc["red"];
+    configGreen = cc["green"];
+    configBlue = cc["blue"];
+    xSemaphoreGive(configMutex);
+  } else {
+    USE_SERIAL.println("Warning - readConfig() unable to get config mutex");
+  }
 
   http.end();
 }
@@ -374,25 +478,21 @@ void TaskFlash(void *pvParameters) {
 void TaskCheckin(void *pvParameters) {
   for (;;) {
     if ((wifiMulti.run() == WL_CONNECTED)) {
-      if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
-        checkin();
-        readConfig();
-        xSemaphoreGive(configMutex);
-      }
+      checkin();
+      readConfig();
     }
-    vTaskDelay(2000 / portTICK_PERIOD_MS);
+    vTaskDelay(10000 / portTICK_PERIOD_MS);
   }
 }
 
 /* Task to run current LED config. */
 void TaskRunConfig(void *pvParameters) {
   for (;;) {
-    if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
-      runConfig();
-      xSemaphoreGive(configMutex);
-    }
+    runConfig();
     vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
 
-void loop() {}
+void loop() {
+  delay(1000);
+}
