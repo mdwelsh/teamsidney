@@ -24,7 +24,7 @@
 
 #define USE_SERIAL Serial
 
-#define NUMPIXELS 60
+#define NUMPIXELS 144
 #define NEOPIXEL_DATA_PIN 14
 #define DOTSTAR_DATA_PIN 14
 #define DOTSTAR_CLOCK_PIN 32
@@ -54,7 +54,7 @@ void TaskRunConfig(void *);
 
 void setup() {
   strip.begin();
-  strip.setBrightness(20);
+  //strip.setBrightness(20);
   strip.show();
   black();
 
@@ -111,7 +111,7 @@ void black() {
     delay(5);
   }
   strip.show();
-  strip.setBrightness(255); // This helps eliminate spurious pixels being lit while all black.
+  //strip.setBrightness(255); // This helps eliminate spurious pixels being lit while all black.
   //strip.show();
 }
 
@@ -158,6 +158,32 @@ void rainbow(uint8_t wait) {
   for(j=0; j<256; j++) {
     for(i=0; i<strip.numPixels(); i++) {
       strip.setPixelColor(i, Wheel((i+j) & 255));
+    }
+    strip.show();
+    delay(wait);
+  }
+}
+
+float rainState[NUMPIXELS];
+void rain(uint32_t color, int maxdrops, int wait) {
+  USE_SERIAL.printf("Rain: Called with color %x drops %d wait %d\n", color, maxdrops, wait);
+  
+  for (int i = 0; i < NUMPIXELS; i++) {
+    rainState[i] = 0;
+  }
+  for (int cycle = 0; cycle < maxdrops * 4; cycle++) {
+    if (random(0, NUMPIXELS) <= maxdrops) {
+      int p = random(0, NUMPIXELS);
+      rainState[p] = 1.0;
+    }
+    for (int i = 0; i < NUMPIXELS; i++) {
+      if (rainState[i] > 0.0) {
+        uint32_t tc = interpolate(0, color, rainState[i]);
+        rainState[i] -= 0.05;
+        strip.setPixelColor(i, tc);
+      } else {
+        strip.setPixelColor(i, 0);
+      }
     }
     strip.show();
     delay(wait);
@@ -301,6 +327,44 @@ void bounce(uint32_t color, int wait) {
   }
 }
 
+void comet(uint32_t color, int tail, int wait) {
+  //black();
+  
+  int dir = 1;
+  int curIndex = 0;
+  int numBounces = 0;
+
+  while (numBounces < 2) {
+    int p;
+    for (int offset = 0; offset < tail; offset++) {
+      float fade = 1.0 - ((offset * 1.0) / (tail * 1.0)); // TODO(mdw): Make nonlinear.
+      uint32_t tc = interpolate(0, color, fade);
+      p = curIndex - (offset * dir);
+      if (p >= 0 && p < NUMPIXELS) {
+        strip.setPixelColor(p, tc);
+      } 
+    }
+    // Set the end of the comet to black, regardless.
+    if (p >= 0 && p < NUMPIXELS) {
+      strip.setPixelColor(p, 0);
+    }
+    strip.show();
+    delay(wait);
+
+    curIndex += dir;
+    if (curIndex >= NUMPIXELS) {
+      curIndex = NUMPIXELS-1;
+      dir = -1;
+      numBounces++;
+    } else if (curIndex < 0) {
+      curIndex = 0;
+      dir = 1;
+      numBounces++;
+    }
+
+  }
+}
+
 // Input a value 0 to 255 to get a color value.
 // The colours are a transition r - g - b - back to r.
 uint32_t Wheel(byte WheelPos) {
@@ -373,6 +437,13 @@ void runConfig() {
     strip.setBrightness(cBrightness);
     strobe(cColor, 10, cSpeed);
 
+  } else if (cMode == "rain") {
+    //strip.setBrightness(cBrightness);
+    rain(cColor, NUMPIXELS , cSpeed);
+
+  } else if (cMode == "comet") {
+    comet(cColor, 8, cSpeed);
+    
   } else {
     USE_SERIAL.println("Unknown mode: " + cMode);
     black();
@@ -489,7 +560,7 @@ void TaskCheckin(void *pvParameters) {
 void TaskRunConfig(void *pvParameters) {
   for (;;) {
     runConfig();
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    //vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
 
