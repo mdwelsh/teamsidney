@@ -24,7 +24,7 @@
 
 #define USE_SERIAL Serial
 
-#define NUMPIXELS 144
+#define NUMPIXELS 60
 #define NEOPIXEL_DATA_PIN 14
 #define DOTSTAR_DATA_PIN 14
 #define DOTSTAR_CLOCK_PIN 32
@@ -40,12 +40,12 @@ HTTPClient http;
 
 StaticJsonDocument<512> curConfigDocument;
 #define MAX_MODE_LEN 16
-String configMode;
-int configBrightness;
-int configSpeed;
-int configRed;
-int configBlue;
-int configGreen;
+String configMode = "wipe";
+int configBrightness = 100;
+int configSpeed = 10;
+int configRed = 255;
+int configBlue = 0;
+int configGreen = 0;
 
 SemaphoreHandle_t configMutex = NULL;
 void TaskFlash(void *);
@@ -70,9 +70,9 @@ void setup() {
   wifiMulti.addAP("theonet", "juneaudog");
 
   configMutex = xSemaphoreCreateMutex();
-  xTaskCreate(TaskFlash, (const char *)"Flash LED", 1024*10, NULL, 1, NULL);
+  //xTaskCreate(TaskFlash, (const char *)"Flash LED", 1024*10, NULL, 1, NULL);
   xTaskCreate(TaskCheckin, (const char *)"Checkin", 1024*40, NULL, 2, NULL);
-  xTaskCreate(TaskRunConfig, (const char *)"Run config", 1024*40, NULL, 3, NULL);
+  xTaskCreate(TaskRunConfig, (const char *)"Run config", 1024*40, NULL, 8, NULL);
 }
 
 void flashLed() {
@@ -392,7 +392,8 @@ void runConfig() {
   if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
     cMode = configMode;
     cColor = strip.Color(configRed, configGreen, configBlue);
-    cBrightness = configBrightness;
+    //cBrightness = configBrightness;
+    cBrightness = 255;  // XXXX MDW HACKING
     cSpeed = configSpeed;
     xSemaphoreGive(configMutex);
   } else {
