@@ -10,7 +10,7 @@
 #include <ArduinoJson.h>
 #include <freertos/task.h>
 
-#define USE_NEOPIXEL
+//#define USE_NEOPIXEL
 
 #ifdef USE_NEOPIXEL
 #include <Adafruit_NeoPixel.h>
@@ -24,7 +24,7 @@
 
 #define USE_SERIAL Serial
 
-#define NUMPIXELS 60
+#define NUMPIXELS 180
 #define NEOPIXEL_DATA_PIN 14
 #define DOTSTAR_DATA_PIN 14
 #define DOTSTAR_CLOCK_PIN 32
@@ -40,11 +40,11 @@ HTTPClient http;
 
 StaticJsonDocument<512> curConfigDocument;
 #define MAX_MODE_LEN 16
-String configMode = "wipe";
+String configMode = "unset";
 int configBrightness = 100;
-int configSpeed = 10;
-int configRed = 255;
-int configBlue = 0;
+int configSpeed = 100;
+int configRed = 100;
+int configBlue = 100;
 int configGreen = 0;
 
 SemaphoreHandle_t configMutex = NULL;
@@ -54,7 +54,7 @@ void TaskRunConfig(void *);
 
 void setup() {
   strip.begin();
-  //strip.setBrightness(20);
+  strip.setBrightness(20);
   strip.show();
   black();
 
@@ -439,11 +439,17 @@ void runConfig() {
     strobe(cColor, 10, cSpeed);
 
   } else if (cMode == "rain") {
-    //strip.setBrightness(cBrightness);
+    strip.setBrightness(cBrightness);
     rain(cColor, NUMPIXELS , cSpeed);
 
   } else if (cMode == "comet") {
     comet(cColor, 8, cSpeed);
+
+  } else if (cMode == "unset") {
+    colorWipe(0xff0000, 5);
+    colorWipe(0x00ff00, 5);
+    colorWipe(0x0000ff, 5);
+    colorWipe(0, 5);
     
   } else {
     USE_SERIAL.println("Unknown mode: " + cMode);
@@ -550,6 +556,9 @@ void TaskFlash(void *pvParameters) {
 void TaskCheckin(void *pvParameters) {
   for (;;) {
     if ((wifiMulti.run() == WL_CONNECTED)) {
+      for (int i = 0; i < 5; i++) {
+        flashLed();
+      }
       checkin();
       readConfig();
     }
