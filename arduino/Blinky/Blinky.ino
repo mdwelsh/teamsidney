@@ -24,7 +24,9 @@
 
 #define USE_SERIAL Serial
 
-#define NUMPIXELS 180
+const char BUILD_VERSION[] = __FILE__ " " __DATE__ " " __TIME__;
+
+#define NUMPIXELS 120
 #define NEOPIXEL_DATA_PIN 14
 #define DOTSTAR_DATA_PIN 14
 #define DOTSTAR_CLOCK_PIN 32
@@ -53,15 +55,17 @@ void TaskCheckin(void *);
 void TaskRunConfig(void *);
 
 void setup() {
+  configMode.reserve(32);
+  pinMode(LED_BUILTIN, OUTPUT);
+  
+  USE_SERIAL.begin(115200);
+  USE_SERIAL.printf("Starting: %s\n", BUILD_VERSION);
+  
   strip.begin();
   strip.setBrightness(20);
   strip.show();
   black();
 
-  configMode.reserve(32);
-  pinMode(LED_BUILTIN, OUTPUT);
-
-  USE_SERIAL.begin(115200);
   for (uint8_t t = 4; t > 0; t--) {
     USE_SERIAL.printf("[SETUP] WAIT %d...\n", t);
     USE_SERIAL.flush();
