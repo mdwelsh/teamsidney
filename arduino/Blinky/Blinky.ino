@@ -26,7 +26,7 @@
 
 const char BUILD_VERSION[] = __FILE__ " " __DATE__ " " __TIME__;
 
-#define NUMPIXELS 120
+#define NUMPIXELS 144
 #define NEOPIXEL_DATA_PIN 14
 #define DOTSTAR_DATA_PIN 14
 #define DOTSTAR_CLOCK_PIN 32
@@ -41,13 +41,30 @@ WiFiMulti wifiMulti;
 HTTPClient http;
 
 StaticJsonDocument<512> curConfigDocument;
+// Maximum length of configMode string.
 #define MAX_MODE_LEN 16
-String configMode = "unset";
+
+// Copy of the current configuration.
+String configMode = "test";
+bool configEnabled = true;
+int configColorChange = 0;
 int configBrightness = 100;
 int configSpeed = 100;
 int configRed = 100;
 int configBlue = 100;
 int configGreen = 0;
+
+// Set of modes to select from in "random" mode.
+#define NUM_RANDOM_MODES 7
+const String RANDOM_MODES[] = {
+  "wipe",
+  "theatre",
+  "rainbow",
+  "bounce",
+  "strobe",
+  "rain",
+  "comet",
+};
 
 SemaphoreHandle_t configMutex = NULL;
 void TaskFlash(void *);
@@ -74,7 +91,6 @@ void setup() {
   wifiMulti.addAP("theonet", "juneaudog");
 
   configMutex = xSemaphoreCreateMutex();
-  //xTaskCreate(TaskFlash, (const char *)"Flash LED", 1024*10, NULL, 1, NULL);
   xTaskCreate(TaskCheckin, (const char *)"Checkin", 1024*40, NULL, 2, NULL);
   xTaskCreate(TaskRunConfig, (const char *)"Run config", 1024*40, NULL, 8, NULL);
 }
@@ -115,8 +131,6 @@ void black() {
     delay(5);
   }
   strip.show();
-  //strip.setBrightness(255); // This helps eliminate spurious pixels being lit while all black.
-  //strip.show();
 }
 
 uint32_t interpolate(uint32_t color1, uint32_t color2, float mix) {
@@ -149,6 +163,12 @@ void mixBetween(uint32_t color1, uint32_t color2, int numsteps, uint8_t wait) {
   setAll(color2);
   strip.show();
   delay(wait);
+}
+
+String randomMode() {
+  int index = random(0, NUM_RANDOM_MODES-1);
+  USE_SERIAL.printf("Selecting random mode %d: %s\n", index, RANDOM_MODES[index]);
+  return RANDOM_MODES[index];
 }
 
 void strobe(uint32_t c, int numsteps, uint8_t wait) {
@@ -332,8 +352,6 @@ void bounce(uint32_t color, int wait) {
 }
 
 void comet(uint32_t color, int tail, int wait) {
-  //black();
-  
   int dir = 1;
   int curIndex = 0;
   int numBounces = 0;
@@ -390,25 +408,33 @@ void runConfig() {
 
   String cMode;
   uint32_t cColor;
-  int cBrightness, cSpeed;
+  int cColorChange, cBrightness, cSpeed;
+  bool cEnabled;
 
   // Read local copy of config to avoid holding mutex for too long.
   if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
+    cEnabled = configEnabled;
     cMode = configMode;
     cColor = strip.Color(configRed, configGreen, configBlue);
-    //cBrightness = configBrightness;
-    cBrightness = 255;  // XXXX MDW HACKING
+    cColorChange = configColorChange;
+    cBrightness = configBrightness;
     cSpeed = configSpeed;
     xSemaphoreGive(configMutex);
   } else {
     // Can't get mutex to read config, just bail.
     USE_SERIAL.println("Warning - runConfig() unable to get config mutex.");
   }
+
+  if (cMode == "random") {
+    cMode = randomMode();
+  }
+
+  USE_SERIAL.println("Running config: " + cMode + " enabled " + cEnabled);
   
-  if (cMode == "none" || cMode == "off") {
+  if (cMode == "none" || cMode == "off" || !cEnabled) {
     black();
     delay(1000);
-    
+
   } else if (cMode == "wipe") {
     strip.setBrightness(cBrightness);
     colorWipe(cColor, cSpeed);
@@ -449,7 +475,7 @@ void runConfig() {
   } else if (cMode == "comet") {
     comet(cColor, 8, cSpeed);
 
-  } else if (cMode == "unset") {
+  } else if (cMode == "test") {
     colorWipe(0xff0000, 5);
     colorWipe(0x00ff00, 5);
     colorWipe(0x0000ff, 5);
@@ -469,6 +495,7 @@ void checkin() {
   USE_SERIAL.println(WiFi.localIP().toString());
 
   String url = "https://team-sidney.firebaseio.com/checkin/" + WiFi.macAddress() + ".json";
+  http.setTimeout(1000);
   http.begin(url);
 
   String curModeJson;
@@ -514,6 +541,7 @@ void readConfig() {
   USE_SERIAL.println("readConfig called");
   
   String url = "https://team-sidney.firebaseio.com/strips/" + WiFi.macAddress() + ".json";
+  http.setTimeout(1000);
   http.begin(url);
 
   USE_SERIAL.print("[HTTP] GET " + url + "\n");
@@ -535,8 +563,10 @@ void readConfig() {
 
     JsonObject cc = curConfigDocument.as<JsonObject>();
     configMode = (const String &)cc["mode"];
+    configEnabled = (cc["enabled"] == true);
     configSpeed = cc["speed"];
     configBrightness = cc["brightness"];
+    configColorChange = cc["colorChange"];
     configRed = cc["red"];
     configGreen = cc["green"];
     configBlue = cc["blue"];
@@ -546,14 +576,6 @@ void readConfig() {
   }
 
   http.end();
-}
-
-/* Task to flash onboard LED. */
-void TaskFlash(void *pvParameters) {
-  for (;;) {
-    flashLed();
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-  }
 }
 
 /* Task to periodically checkin and read new config. */
@@ -574,7 +596,6 @@ void TaskCheckin(void *pvParameters) {
 void TaskRunConfig(void *pvParameters) {
   for (;;) {
     runConfig();
-    //vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
 
