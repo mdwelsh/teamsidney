@@ -9,6 +9,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <freertos/task.h>
+#include <Update.h>
 
 //#define USE_NEOPIXEL
 
@@ -28,6 +29,8 @@ const char BUILD_VERSION[] = __FILE__ " " __DATE__ " " __TIME__;
 
 // Start with this many pixels, but can be reconfigured.
 #define NUMPIXELS 120
+// Maximum number, for the sake of maintaining state.
+#define MAX_PIXELS 200
 #define NEOPIXEL_DATA_PIN 14
 #define DOTSTAR_DATA_PIN 14
 #define DOTSTAR_CLOCK_PIN 32
@@ -143,7 +146,7 @@ void colorWipe(uint32_t c, uint8_t wait) {
 // to prevent spurious pixels from being shown.
 void black() {
   delay(5);
-  for(int i = 0; i < NUMPIXELS; i++) {
+  for(int i = 0; i < strip->numPixels(); i++) {
     strip->setPixelColor(i, 0);
     strip->show();
     delay(5);
@@ -206,19 +209,19 @@ void rainbow(uint8_t wait) {
   }
 }
 
-float rainState[NUMPIXELS];
+float rainState[MAX_PIXELS];
 void rain(uint32_t color, int maxdrops, int wait) {
   USE_SERIAL.printf("Rain: Called with color %x drops %d wait %d\n", color, maxdrops, wait);
   
-  for (int i = 0; i < NUMPIXELS; i++) {
+  for (int i = 0; i < MAX_PIXELS; i++) {
     rainState[i] = 0;
   }
   for (int cycle = 0; cycle < maxdrops * 4; cycle++) {
-    if (random(0, NUMPIXELS) <= maxdrops) {
-      int p = random(0, NUMPIXELS);
+    if (random(0, strip->numPixels()) <= maxdrops) {
+      int p = random(0, strip->numPixels());
       rainState[p] = 1.0;
     }
-    for (int i = 0; i < NUMPIXELS; i++) {
+    for (int i = 0; i < strip->numPixels(); i++) {
       if (rainState[i] > 0.0) {
         uint32_t tc = interpolate(0, color, rainState[i]);
         rainState[i] -= 0.05;
@@ -380,20 +383,20 @@ void comet(uint32_t color, int tail, int wait) {
       float fade = 1.0 - ((offset * 1.0) / (tail * 1.0)); // TODO(mdw): Make nonlinear.
       uint32_t tc = interpolate(0, color, fade);
       p = curIndex - (offset * dir);
-      if (p >= 0 && p < NUMPIXELS) {
+      if (p >= 0 && p < strip->numPixels()) {
         strip->setPixelColor(p, tc);
       } 
     }
     // Set the end of the comet to black, regardless.
-    if (p >= 0 && p < NUMPIXELS) {
+    if (p >= 0 && p < strip->numPixels()) {
       strip->setPixelColor(p, 0);
     }
     strip->show();
     delay(wait);
 
     curIndex += dir;
-    if (curIndex >= NUMPIXELS) {
-      curIndex = NUMPIXELS-1;
+    if (curIndex >= strip->numPixels()) {
+      curIndex = strip->numPixels()-1;
       dir = -1;
       numBounces++;
     } else if (curIndex < 0) {
@@ -422,7 +425,7 @@ uint32_t Wheel(byte WheelPos) {
 
 // Run the current config.
 void runConfig() {
-  USE_SERIAL.println("runConfig called, mode is "+configMode);
+  USE_SERIAL.println("runConfig mode: " + configMode);
 
   String cMode;
   uint32_t cColor;
