@@ -25,7 +25,8 @@
 
 #define USE_SERIAL Serial
 
-const char BUILD_VERSION[] = (__DATE__ " " __TIME__);
+// We use some magic strings in this constant to ensure that we can easily strip it out of the binary.
+const char BUILD_VERSION[] = ("__Bl!nky__ " __DATE__ " " __TIME__ " ___");
 
 // Start with this many pixels, but can be reconfigured.
 #define NUMPIXELS 120
@@ -58,7 +59,12 @@ int configSpeed = 100;
 int configRed = 100;
 int configBlue = 100;
 int configGreen = 0;
-String configFirmwareUrl = "";
+String configFirmwareVersion = "";
+
+// Next firmware URL and hash, for OTA update.
+StaticJsonDocument<512> firmwareVersionDocument;
+String firmwareUrl = "";
+String firmwareHash = "";
 
 // Set of modes to select from in "random" mode.
 #define NUM_RANDOM_MODES 7
@@ -98,6 +104,7 @@ void makeNewStrip(int numPixels) {
 
 void setup() {
   configMode.reserve(32);
+  configFirmwareVersion.reserve(128);
   pinMode(LED_BUILTIN, OUTPUT);
 
   makeNewStrip(NUMPIXELS);
@@ -430,7 +437,7 @@ void runConfig() {
 
   String cMode;
   uint32_t cColor;
-  int cColorChange, cBrightness, cSpeed;
+  int cColorChange, cBrightness, cSpeed, cNumPixels;
   bool cEnabled;
 
   // Read local copy of config to avoid holding mutex for too long.
@@ -441,10 +448,17 @@ void runConfig() {
     cColorChange = configColorChange;
     cBrightness = configBrightness;
     cSpeed = configSpeed;
+    cNumPixels = configNumPixels;
     xSemaphoreGive(configMutex);
   } else {
     // Can't get mutex to read config, just bail.
     USE_SERIAL.println("Warning - runConfig() unable to get config mutex.");
+    return;
+  }
+
+  // If we have a new config for the number of pixels, reset the strip.
+  if (cNumPixels != strip->numPixels()) {
+    makeNewStrip(configNumPixels);
   }
 
   if (cMode == "random") {
@@ -579,6 +593,8 @@ void readConfig() {
   USE_SERIAL.printf("[HTTP] Response code: %d\n", httpCode);
   USE_SERIAL.println(payload);
 
+  bool needsFirmwareUpdate = false;
+
   // Parse JSON config.
   if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
     DeserializationError err = deserializeJson(curConfigDocument, payload);
@@ -598,18 +614,23 @@ void readConfig() {
     configRed = cc["red"];
     configGreen = cc["green"];
     configBlue = cc["blue"];
+    configFirmwareVersion = (const String &)cc["version"];
 
-    // If we have a new config for the number of pixels, reset the strip.
-    if (configNumPixels != strip->numPixels()) {
-      makeNewStrip(configNumPixels);
+    // If the firmware version needs to be updated, kick off the update.
+    if (configFirmwareVersion != BUILD_VERSION) {
+      needsFirmwareUpdate = true;
     }
     
     xSemaphoreGive(configMutex);
   } else {
     USE_SERIAL.println("Warning - readConfig() unable to get config mutex");
   }
-
   http.end();
+
+  if (needsFirmwareUpdate) {
+    updateFirmware();
+  }
+
 }
 
 /* Task to periodically checkin and read new config. */
@@ -633,6 +654,104 @@ void TaskRunConfig(void *pvParameters) {
   }
 }
 
+void readFirmwareMetadata(String firmwareVersion) {
+  USE_SERIAL.println("readFirmwareMetadata called");
+  
+  String url = "https://team-sidney.firebaseio.com/firmware/" + firmwareVersion + ".json";
+  http.setTimeout(1000);
+  http.begin(url);
+
+  USE_SERIAL.print("[HTTP] GET " + url + "\n");
+  int httpCode = http.GET();
+  if (httpCode <= 0) {
+    USE_SERIAL.printf("[HTTP] failed, error: %s\n", http.errorToString(httpCode).c_str());
+    return;
+  }
+  
+  String payload = http.getString();
+  USE_SERIAL.printf("[HTTP] Response code: %d\n", httpCode);
+  USE_SERIAL.println(payload);
+
+  // Parse JSON config.
+  DeserializationError err = deserializeJson(firmwareVersionDocument, payload);
+  USE_SERIAL.print("Deserialize returned: ");
+  USE_SERIAL.println(err.c_str());
+
+  JsonObject fwdoc = firmwareVersionDocument.as<JsonObject>();
+  firmwareUrl = (const String &)fwdoc["url"];
+  firmwareHash = (const String &)fwdoc["hash"];
+
+  http.end();
+}
+
+void updateFirmware() {
+  String newVersion;
+  
+  if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
+    newVersion = configFirmwareVersion;
+    xSemaphoreGive(configMutex);
+  } else {
+    USE_SERIAL.println("Warning - updateFirmware() unable to get config mutex");
+    return;
+  }
+  
+  USE_SERIAL.printf("Current firmware version: %s\n", BUILD_VERSION);
+  USE_SERIAL.println("Desired firmware version: " + newVersion);
+
+  readFirmwareMetadata(newVersion);
+  USE_SERIAL.println("Read firmware metadata, URL is " + firmwareUrl);
+  USE_SERIAL.println("Hash " + firmwareHash);
+  
+
+  USE_SERIAL.println("Starting OTA...");
+  http.begin(firmwareUrl);
+
+  USE_SERIAL.print("[HTTP] GET " + firmwareUrl + "\n");
+  int httpCode = http.GET();
+  if (httpCode <= 0) {
+    USE_SERIAL.printf("[HTTP] failed, error: %s\n", http.errorToString(httpCode).c_str());
+    return;
+  }
+
+  int contentLen = http.getSize();
+  USE_SERIAL.printf("Content-Length: %d\n", contentLen);
+  bool canBegin = Update.begin(contentLen);
+  if (canBegin) {
+    USE_SERIAL.println("OK to start OTA.");
+  } else {
+    USE_SERIAL.println("Not enough space to begin OTA");
+    return;
+  }
+
+  WiFiClient* client = http.getStreamPtr();
+  size_t written = Update.writeStream(*client);
+  USE_SERIAL.printf("OTA: %d/%d bytes written.\n", written, contentLen);
+  if (written != contentLen) {
+    USE_SERIAL.println("Wrote partial binary. Giving up.");
+    return;
+  }
+
+  
+  
+  if (Update.end()) {
+    USE_SERIAL.println("OTA done!");
+  } else {
+    USE_SERIAL.println("Error from Update.end(): " + String(Update.getError()));
+    return;
+  }
+  
+  String md5 = Update.md5String();
+  USE_SERIAL.println("MD5: " + md5);
+  
+  if (Update.isFinished()) {
+    USE_SERIAL.println("Update successfully completed. Rebooting.");
+    ESP.restart();
+  } else {
+    USE_SERIAL.println("Error from Update.isFinished(): " + String(Update.getError()));
+    return;
+  }
+}
+
 void loop() {
-  delay(1000);
+  delay(60000);
 }
