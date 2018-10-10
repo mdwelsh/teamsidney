@@ -26,7 +26,7 @@
 
 const char BUILD_VERSION[] = __FILE__ " " __DATE__ " " __TIME__;
 
-#define NUMPIXELS 144
+#define NUMPIXELS 180
 #define NEOPIXEL_DATA_PIN 14
 #define DOTSTAR_DATA_PIN 14
 #define DOTSTAR_CLOCK_PIN 32
@@ -507,6 +507,7 @@ void checkin() {
   ts[".sv"] = "timestamp";
   checkinPayload["mac"] = WiFi.macAddress();
   checkinPayload["ip"] = WiFi.localIP().toString();
+  checkinPayload["rssi"] = WiFi.RSSI();
 
   String payload;
   if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
