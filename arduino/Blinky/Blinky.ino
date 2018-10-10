@@ -25,7 +25,7 @@
 
 #define USE_SERIAL Serial
 
-const char BUILD_VERSION[] = __FILE__ " " __DATE__ " " __TIME__;
+const char BUILD_VERSION[] = (__DATE__ " " __TIME__);
 
 // Start with this many pixels, but can be reconfigured.
 #define NUMPIXELS 120
@@ -58,6 +58,7 @@ int configSpeed = 100;
 int configRed = 100;
 int configBlue = 100;
 int configGreen = 0;
+String configFirmwareUrl = "";
 
 // Set of modes to select from in "random" mode.
 #define NUM_RANDOM_MODES 7
@@ -526,6 +527,7 @@ void checkin() {
   // This is Firebase magic to cause a server variable to be set with the current server timestamp on receipt.
   JsonObject ts = checkinPayload.createNestedObject("timestamp");
   ts[".sv"] = "timestamp";
+  checkinPayload["version"] = BUILD_VERSION;
   checkinPayload["mac"] = WiFi.macAddress();
   checkinPayload["ip"] = WiFi.localIP().toString();
   checkinPayload["rssi"] = WiFi.RSSI();
