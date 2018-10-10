@@ -26,15 +26,16 @@
 
 const char BUILD_VERSION[] = __FILE__ " " __DATE__ " " __TIME__;
 
-#define NUMPIXELS 180
+// Start with this many pixels, but can be reconfigured.
+#define NUMPIXELS 120
 #define NEOPIXEL_DATA_PIN 14
 #define DOTSTAR_DATA_PIN 14
 #define DOTSTAR_CLOCK_PIN 32
 
 #ifdef USE_NEOPIXEL
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUMPIXELS, NEOPIXEL_DATA_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel *strip = NULL;
 #else
-Adafruit_DotStar strip = Adafruit_DotStar(NUMPIXELS, DOTSTAR_DATA_PIN, DOTSTAR_CLOCK_PIN, DOTSTAR_BGR);
+Adafruit_DotStar *strip = NULL;
 #endif
 
 WiFiMulti wifiMulti;
@@ -47,6 +48,7 @@ StaticJsonDocument<512> curConfigDocument;
 // Copy of the current configuration.
 String configMode = "test";
 bool configEnabled = true;
+int configNumPixels = NUMPIXELS;
 int configColorChange = 0;
 int configBrightness = 100;
 int configSpeed = 100;
@@ -71,17 +73,33 @@ void TaskFlash(void *);
 void TaskCheckin(void *);
 void TaskRunConfig(void *);
 
+void makeNewStrip(int numPixels) {
+  USE_SERIAL.printf("Making new strip with %d pixels\n", numPixels);
+  if (strip != NULL) {
+    black();
+    delete strip;
+  }
+#ifdef USE_NEOPIXEL
+  strip = new Adafruit_NeoPixel(numPixels, NEOPIXEL_DATA_PIN, NEO_GRB + NEO_KHZ800);
+#else
+  strip = new Adafruit_DotStar(numPixels, DOTSTAR_DATA_PIN, DOTSTAR_CLOCK_PIN, DOTSTAR_BGR);
+#endif
+  strip->begin();
+  strip->setBrightness(20);
+  strip->show();
+  black();
+  colorWipe(0xFFFF00, 1);
+  black();
+}
+
 void setup() {
   configMode.reserve(32);
   pinMode(LED_BUILTIN, OUTPUT);
+
+  makeNewStrip(NUMPIXELS);
   
   USE_SERIAL.begin(115200);
   USE_SERIAL.printf("Starting: %s\n", BUILD_VERSION);
-  
-  strip.begin();
-  strip.setBrightness(20);
-  strip.show();
-  black();
 
   for (uint8_t t = 4; t > 0; t--) {
     USE_SERIAL.printf("[SETUP] WAIT %d...\n", t);
@@ -103,21 +121,21 @@ void flashLed() {
 }
 
 void setAll(uint32_t c) {
-  for (int i = 0; i < strip.numPixels(); i++) {
-    strip.setPixelColor(i, c);
+  for (int i = 0; i < strip->numPixels(); i++) {
+    strip->setPixelColor(i, c);
   }
 }
 
 void colorWipe(uint32_t c, uint8_t wait) {
-  for(uint16_t i=0; i<strip.numPixels(); i++) {
-    strip.setPixelColor(i, c);
+  for(uint16_t i=0; i<strip->numPixels(); i++) {
+    strip->setPixelColor(i, c);
     if (wait > 0) {
-      strip.show();
+      strip->show();
       delay(wait);
     }
   }
   if (wait == 0) {
-    strip.show();
+    strip->show();
   }
 }
 
@@ -126,11 +144,11 @@ void colorWipe(uint32_t c, uint8_t wait) {
 void black() {
   delay(5);
   for(int i = 0; i < NUMPIXELS; i++) {
-    strip.setPixelColor(i, 0);
-    strip.show();
+    strip->setPixelColor(i, 0);
+    strip->show();
     delay(5);
   }
-  strip.show();
+  strip->show();
 }
 
 uint32_t interpolate(uint32_t color1, uint32_t color2, float mix) {
@@ -151,17 +169,17 @@ uint32_t interpolate(uint32_t color1, uint32_t color2, float mix) {
 
 void mixBetween(uint32_t color1, uint32_t color2, int numsteps, uint8_t wait) {
   setAll(color1);
-  strip.show();
+  strip->show();
   delay(wait);
   float mix = 0.0;
   for (mix = 0.0; mix < 1.0; mix += (1.0 / numsteps)) {
     uint32_t tc = interpolate(color1, color2, mix);
     setAll(tc);
-    strip.show();
+    strip->show();
     delay(wait);
   }
   setAll(color2);
-  strip.show();
+  strip->show();
   delay(wait);
 }
 
@@ -180,10 +198,10 @@ void rainbow(uint8_t wait) {
   uint16_t i, j;
 
   for(j=0; j<256; j++) {
-    for(i=0; i<strip.numPixels(); i++) {
-      strip.setPixelColor(i, Wheel((i+j) & 255));
+    for(i=0; i<strip->numPixels(); i++) {
+      strip->setPixelColor(i, Wheel((i+j) & 255));
     }
-    strip.show();
+    strip->show();
     delay(wait);
   }
 }
@@ -204,12 +222,12 @@ void rain(uint32_t color, int maxdrops, int wait) {
       if (rainState[i] > 0.0) {
         uint32_t tc = interpolate(0, color, rainState[i]);
         rainState[i] -= 0.05;
-        strip.setPixelColor(i, tc);
+        strip->setPixelColor(i, tc);
       } else {
-        strip.setPixelColor(i, 0);
+        strip->setPixelColor(i, 0);
       }
     }
-    strip.show();
+    strip->show();
     delay(wait);
   }
 }
@@ -218,10 +236,10 @@ void rainbowCycle(uint8_t wait) {
   uint16_t i, j;
 
   for(j=0; j<256*5; j++) { // 5 cycles of all colors on wheel
-    for(i=0; i< strip.numPixels(); i++) {
-      strip.setPixelColor(i, Wheel(((i * 256 / strip.numPixels()) + j) & 255));
+    for(i=0; i< strip->numPixels(); i++) {
+      strip->setPixelColor(i, Wheel(((i * 256 / strip->numPixels()) + j) & 255));
     }
-    strip.show();
+    strip->show();
     delay(wait);
   }
 }
@@ -229,15 +247,15 @@ void rainbowCycle(uint8_t wait) {
 void theaterChase(uint32_t c, uint8_t wait) {
   for (int j=0; j<1000; j++) {  //do 10 cycles of chasing
     for (int q=0; q < 3; q++) {
-      for (uint16_t i=0; i < strip.numPixels(); i=i+3) {
-        strip.setPixelColor(i+q, c);    //turn every third pixel on
+      for (uint16_t i=0; i < strip->numPixels(); i=i+3) {
+        strip->setPixelColor(i+q, c);    //turn every third pixel on
       }
-      strip.show();
+      strip->show();
 
       delay(wait);
 
-      for (uint16_t i=0; i < strip.numPixels(); i=i+3) {
-        strip.setPixelColor(i+q, 0);        //turn every third pixel off
+      for (uint16_t i=0; i < strip->numPixels(); i=i+3) {
+        strip->setPixelColor(i+q, 0);        //turn every third pixel off
       }
     }
   }
@@ -246,15 +264,15 @@ void theaterChase(uint32_t c, uint8_t wait) {
 void theaterChaseRainbow(uint8_t wait) {
   for (int j=0; j < 256; j++) {     // cycle all 256 colors in the wheel
     for (int q=0; q < 3; q++) {
-      for (uint16_t i=0; i < strip.numPixels(); i=i+3) {
-        strip.setPixelColor(i+q, Wheel( (i+j) % 255));    //turn every third pixel on
+      for (uint16_t i=0; i < strip->numPixels(); i=i+3) {
+        strip->setPixelColor(i+q, Wheel( (i+j) % 255));    //turn every third pixel on
       }
-      strip.show();
+      strip->show();
 
       delay(wait);
 
-      for (uint16_t i=0; i < strip.numPixels(); i=i+3) {
-        strip.setPixelColor(i+q, 0);        //turn every third pixel off
+      for (uint16_t i=0; i < strip->numPixels(); i=i+3) {
+        strip->setPixelColor(i+q, 0);        //turn every third pixel off
       }
     }
   }
@@ -270,13 +288,13 @@ void spackle(uint8_t cycles, uint8_t maxSet, uint8_t wait) {
   
   for (uint16_t i = 0; i < cycles; i++) {
     if (setPixels[i % maxSet] != -1) {
-      strip.setPixelColor(setPixels[i % maxSet], 0);
+      strip->setPixelColor(setPixels[i % maxSet], 0);
     }
-    int index = random(0, strip.numPixels());
+    int index = random(0, strip->numPixels());
     uint32_t col = Wheel(random(0, 255));
     setPixels[i % maxSet] = index;
-    strip.setPixelColor(index, col);
-    strip.show();
+    strip->setPixelColor(index, col);
+    strip->show();
     delay(wait);
   }
 }
@@ -285,30 +303,30 @@ void incrementFire(int index) {
   if (index < 0) {
     return;
   }
-  if (index >= strip.numPixels()) {
+  if (index >= strip->numPixels()) {
     return;
   }
-  uint32_t c = strip.getPixelColor(index);
+  uint32_t c = strip->getPixelColor(index);
   if (c >= 0xf00000) {
     return;
   }
   c += 0x100400;
-  strip.setPixelColor(index, c);
-  strip.show();
+  strip->setPixelColor(index, c);
+  strip->show();
 }
 
 void fire(int cycles, int wait) {
   colorWipe(0, 0); // Set to black.
 
-  int start = random(0, strip.numPixels());
-  strip.setPixelColor(start, 0x100400);
-  strip.show();
+  int start = random(0, strip->numPixels());
+  strip->setPixelColor(start, 0x100400);
+  strip->show();
   delay(wait);
 
   // XXX(mdw) - This is buggy.
   for (int cycle = 0; cycle < cycles; cycle++) {
-    for (int i = 0; i < strip.numPixels(); i++) {
-      uint32_t cur = strip.getPixelColor(i);
+    for (int i = 0; i < strip->numPixels(); i++) {
+      uint32_t cur = strip->getPixelColor(i);
       if (cur == 0 || cur >= 0xf00000) {
         continue;
       }
@@ -330,18 +348,18 @@ void bounce(uint32_t color, int wait) {
   int curIndex = 0;
   while (curSize < maxSize) {
     for (int i = 0; i < curSize; i++) {
-      strip.setPixelColor(curIndex + i, color);
+      strip->setPixelColor(curIndex + i, color);
     }
     if (dir > 0 && curIndex-1 > 0) {
-      strip.setPixelColor(curIndex-1, 0);
+      strip->setPixelColor(curIndex-1, 0);
     }
-    if (dir < 0 && curIndex+curSize < strip.numPixels()) {
-      strip.setPixelColor(curIndex+curSize, 0);
+    if (dir < 0 && curIndex+curSize < strip->numPixels()) {
+      strip->setPixelColor(curIndex+curSize, 0);
     }
-    strip.show();
+    strip->show();
     delay(wait);
     curIndex += dir;
-    if (dir > 0 && curIndex+curSize >= strip.numPixels()) {
+    if (dir > 0 && curIndex+curSize >= strip->numPixels()) {
       dir = -1;
       curSize += 2;
     } else if (dir < 0 && curIndex == 0) {
@@ -363,14 +381,14 @@ void comet(uint32_t color, int tail, int wait) {
       uint32_t tc = interpolate(0, color, fade);
       p = curIndex - (offset * dir);
       if (p >= 0 && p < NUMPIXELS) {
-        strip.setPixelColor(p, tc);
+        strip->setPixelColor(p, tc);
       } 
     }
     // Set the end of the comet to black, regardless.
     if (p >= 0 && p < NUMPIXELS) {
-      strip.setPixelColor(p, 0);
+      strip->setPixelColor(p, 0);
     }
-    strip.show();
+    strip->show();
     delay(wait);
 
     curIndex += dir;
@@ -392,14 +410,14 @@ void comet(uint32_t color, int tail, int wait) {
 uint32_t Wheel(byte WheelPos) {
   WheelPos = 255 - WheelPos;
   if(WheelPos < 85) {
-    return strip.Color(255 - WheelPos * 3, 0, WheelPos * 3);
+    return strip->Color(255 - WheelPos * 3, 0, WheelPos * 3);
   }
   if(WheelPos < 170) {
     WheelPos -= 85;
-    return strip.Color(0, WheelPos * 3, 255 - WheelPos * 3);
+    return strip->Color(0, WheelPos * 3, 255 - WheelPos * 3);
   }
   WheelPos -= 170;
-  return strip.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
+  return strip->Color(WheelPos * 3, 255 - WheelPos * 3, 0);
 }
 
 // Run the current config.
@@ -415,7 +433,7 @@ void runConfig() {
   if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
     cEnabled = configEnabled;
     cMode = configMode;
-    cColor = strip.Color(configRed, configGreen, configBlue);
+    cColor = strip->Color(configRed, configGreen, configBlue);
     cColorChange = configColorChange;
     cBrightness = configBrightness;
     cSpeed = configSpeed;
@@ -436,40 +454,40 @@ void runConfig() {
     delay(1000);
 
   } else if (cMode == "wipe") {
-    strip.setBrightness(cBrightness);
+    strip->setBrightness(cBrightness);
     colorWipe(cColor, cSpeed);
     colorWipe(0, cSpeed);
     
   } else if (cMode == "theater") {
-    strip.setBrightness(cBrightness);
+    strip->setBrightness(cBrightness);
     theaterChase(cColor, cSpeed);
     
   } else if (cMode == "rainbow") {
-    strip.setBrightness(cBrightness);
+    strip->setBrightness(cBrightness);
     rainbow(cSpeed);
     
   } else if (cMode == "rainbowCycle") {
-    strip.setBrightness(cBrightness);
+    strip->setBrightness(cBrightness);
     rainbowCycle(cSpeed);
     
   } else if (cMode == "spackle") {
-    strip.setBrightness(cBrightness);
+    strip->setBrightness(cBrightness);
     spackle(10000, 50, cSpeed);
     
   } else if (cMode == "fire") {
-    strip.setBrightness(cBrightness);
+    strip->setBrightness(cBrightness);
     fire(1000, cSpeed);
     
   } else if (cMode == "bounce") {
-    strip.setBrightness(cBrightness);
+    strip->setBrightness(cBrightness);
     bounce(cColor, cSpeed);
     
   } else if (cMode == "strobe") {
-    strip.setBrightness(cBrightness);
+    strip->setBrightness(cBrightness);
     strobe(cColor, 10, cSpeed);
 
   } else if (cMode == "rain") {
-    strip.setBrightness(cBrightness);
+    strip->setBrightness(cBrightness);
     rain(cColor, NUMPIXELS , cSpeed);
 
   } else if (cMode == "comet") {
@@ -563,6 +581,10 @@ void readConfig() {
     USE_SERIAL.println(err.c_str());
 
     JsonObject cc = curConfigDocument.as<JsonObject>();
+    configNumPixels = cc["numPixels"];
+    if (configNumPixels == 0) {
+      configNumPixels = NUMPIXELS;
+    }
     configMode = (const String &)cc["mode"];
     configEnabled = (cc["enabled"] == true);
     configSpeed = cc["speed"];
@@ -571,6 +593,12 @@ void readConfig() {
     configRed = cc["red"];
     configGreen = cc["green"];
     configBlue = cc["blue"];
+
+    // If we have a new config for the number of pixels, reset the strip.
+    if (configNumPixels != strip->numPixels()) {
+      makeNewStrip(configNumPixels);
+    }
+    
     xSemaphoreGive(configMutex);
   } else {
     USE_SERIAL.println("Warning - readConfig() unable to get config mutex");
