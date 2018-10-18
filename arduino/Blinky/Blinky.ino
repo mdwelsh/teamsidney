@@ -117,7 +117,7 @@ void setup() {
     USE_SERIAL.flush();
     delay(1000);
   }
-  wifiMulti.addAP("theonet", "juneaudog");
+  wifiMulti.addAP("theonet_EXT", "juneaudog");
 
   configMutex = xSemaphoreCreateMutex();
   xTaskCreate(TaskCheckin, (const char *)"Checkin", 1024*40, NULL, 2, NULL);
@@ -617,7 +617,7 @@ void readConfig() {
     configFirmwareVersion = (const String &)cc["version"];
 
     // If the firmware version needs to be updated, kick off the update.
-    if (configFirmwareVersion != BUILD_VERSION) {
+    if (configFirmwareVersion != BUILD_VERSION && configFirmwareVersion != "none" && configFirmwareVersion != "") {
       needsFirmwareUpdate = true;
     }
     
