@@ -29,12 +29,12 @@
 const char BUILD_VERSION[] = ("__Bl!nky__ " __DATE__ " " __TIME__ " ___");
 
 // Start with this many pixels, but can be reconfigured.
-#define NUMPIXELS 120
+#define NUMPIXELS 72
 // Maximum number, for the sake of maintaining state.
 #define MAX_PIXELS 200
 #define NEOPIXEL_DATA_PIN 14
-#define DOTSTAR_DATA_PIN 14
-#define DOTSTAR_CLOCK_PIN 32
+#define DOTSTAR_DATA_PIN 27
+#define DOTSTAR_CLOCK_PIN 13
 
 #ifdef USE_NEOPIXEL
 Adafruit_NeoPixel *strip = NULL;
@@ -350,6 +350,19 @@ void fire(int cycles, int wait) {
   }
 }
 
+void candle(int wait) {
+  for (int cycle = 0; cycle < 1000; cycle++) {
+    int red = random(0xc0, 0xff);
+    int green = red / 2;
+    //int green = random(0x50, 0x80);
+    int blue = random(0x00, 0x10);
+    uint32_t curColor = strip->Color(red, green, blue);
+    colorWipe(curColor, 0);
+    int w = random(wait/2, wait*2);
+    delay(w);
+  }
+}
+
 void bounce(uint32_t color, int wait) {
   colorWipe(0, 0); // Set to black.
 
@@ -466,6 +479,10 @@ void runConfig() {
   }
 
   USE_SERIAL.println("Running config: " + cMode + " enabled " + cEnabled);
+
+  strip->setBrightness(50);
+  candle(100);
+  return;
   
   if (cMode == "none" || cMode == "off" || !cEnabled) {
     black();
@@ -509,7 +526,12 @@ void runConfig() {
     rain(cColor, NUMPIXELS , cSpeed);
 
   } else if (cMode == "comet") {
+    strip->setBrightness(cBrightness);
     comet(cColor, 8, cSpeed);
+
+  } else if (cMode == "candle") {
+    strip->setBrightness(cBrightness);
+    candle(cSpeed);
 
   } else if (cMode == "test") {
     colorWipe(0xff0000, 5);
