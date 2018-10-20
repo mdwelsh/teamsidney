@@ -428,8 +428,11 @@ void comet(uint32_t color, int tail, int wait) {
   while (numBounces < 2) {
     int p;
     for (int offset = 0; offset < tail; offset++) {
-      float fade = 1.0 - ((offset * 1.0) / (tail * 1.0)); // TODO(mdw): Make nonlinear.
-      uint32_t tc = interpolate(0, color, fade);
+      float fade = (offset*offset*1.0) / (tail * 1.0);
+      if (fade > 1.0) {
+        fade = 1.0;
+      }
+      uint32_t tc = interpolate(color, 0, fade);
       p = curIndex - (offset * dir);
       if (p >= 0 && p < strip->numPixels()) {
         strip->setPixelColor(p, tc);
@@ -551,7 +554,7 @@ void runConfig() {
 
   } else if (cMode == "comet") {
     strip->setBrightness(cBrightness);
-    comet(cColor, 8, cSpeed);
+    comet(cColor, 100, cSpeed);
 
   } else if (cMode == "candle") {
     strip->setBrightness(cBrightness);
