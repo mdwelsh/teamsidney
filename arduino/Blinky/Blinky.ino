@@ -38,8 +38,12 @@ const char BUILD_VERSION[] = ("__Bl!nky__ " __DATE__ " " __TIME__ " ___");
 
 #ifdef USE_NEOPIXEL
 Adafruit_NeoPixel *strip = NULL;
+#define DEFAULT_DATA_PIN NEOPIXEL_DATA_PIN
+#define DEFAULT_CLOCK_PIN 0 // Unused.
 #else
 Adafruit_DotStar *strip = NULL;
+#define DEFAULT_DATA_PIN DOTSTAR_DATA_PIN
+#define DEFAULT_CLOCK_PIN DOTSTAR_CLOCK_PIN
 #endif
 
 WiFiMulti wifiMulti;
@@ -53,6 +57,8 @@ StaticJsonDocument<512> curConfigDocument;
 String configMode = "test";
 bool configEnabled = true;
 int configNumPixels = NUMPIXELS;
+int configDataPin = DEFAULT_DATA_PIN;
+int configClockPin = DEFAULT_CLOCK_PIN;
 int configColorChange = 0;
 int configBrightness = 100;
 int configSpeed = 100;
@@ -83,16 +89,16 @@ void TaskFlash(void *);
 void TaskCheckin(void *);
 void TaskRunConfig(void *);
 
-void makeNewStrip(int numPixels) {
+void makeNewStrip(int numPixels, int dataPin, int clockPin) {
   USE_SERIAL.printf("Making new strip with %d pixels\n", numPixels);
   if (strip != NULL) {
     black();
     delete strip;
   }
 #ifdef USE_NEOPIXEL
-  strip = new Adafruit_NeoPixel(numPixels, NEOPIXEL_DATA_PIN, NEO_GRB + NEO_KHZ800);
+  strip = new Adafruit_NeoPixel(numPixels, dataPin, NEO_GRB + NEO_KHZ800);
 #else
-  strip = new Adafruit_DotStar(numPixels, DOTSTAR_DATA_PIN, DOTSTAR_CLOCK_PIN, DOTSTAR_BGR);
+  strip = new Adafruit_DotStar(numPixels, dataPin, clockPin, DOTSTAR_BGR);
 #endif
   strip->begin();
   strip->setBrightness(20);
@@ -107,7 +113,7 @@ void setup() {
   configFirmwareVersion.reserve(128);
   pinMode(LED_BUILTIN, OUTPUT);
 
-  makeNewStrip(NUMPIXELS);
+  makeNewStrip(NUMPIXELS, DEFAULT_DATA_PIN, DEFAULT_CLOCK_PIN);
   
   USE_SERIAL.begin(115200);
   USE_SERIAL.printf("Starting: %s\n", BUILD_VERSION);
@@ -353,11 +359,32 @@ void fire(int cycles, int wait) {
 void candle(int wait) {
   for (int cycle = 0; cycle < 1000; cycle++) {
     int red = random(0xc0, 0xff);
-    int green = red / 2;
-    //int green = random(0x50, 0x80);
-    int blue = random(0x00, 0x10);
+    int green = (red * 0.8);
+    int blue = 0;
     uint32_t curColor = strip->Color(red, green, blue);
     colorWipe(curColor, 0);
+    int w = random(wait/2, wait*2);
+    delay(w);
+  }
+}
+
+void flicker(uint32_t color, int brightness, int wait) {
+  int curBright = brightness;
+  for (int cycle = 0; cycle < 1000; cycle++) {
+    int step = random(0, 10);
+    if (random(0, 10) < 5) {
+      curBright += step;
+    } else {
+      curBright -= step;
+    }
+    if (curBright < 40) {
+      curBright = 40;
+    }
+    if (curBright > 120) {
+      curBright = 120;
+    }
+    strip->setBrightness(curBright);
+    colorWipe(color, 0);
     int w = random(wait/2, wait*2);
     delay(w);
   }
@@ -425,7 +452,6 @@ void comet(uint32_t color, int tail, int wait) {
       dir = 1;
       numBounces++;
     }
-
   }
 }
 
@@ -450,7 +476,7 @@ void runConfig() {
 
   String cMode;
   uint32_t cColor;
-  int cColorChange, cBrightness, cSpeed, cNumPixels;
+  int cColorChange, cBrightness, cSpeed, cNumPixels, cDataPin, cClockPin;
   bool cEnabled;
 
   // Read local copy of config to avoid holding mutex for too long.
@@ -462,6 +488,8 @@ void runConfig() {
     cBrightness = configBrightness;
     cSpeed = configSpeed;
     cNumPixels = configNumPixels;
+    cDataPin = configDataPin;
+    cClockPin = configClockPin;
     xSemaphoreGive(configMutex);
   } else {
     // Can't get mutex to read config, just bail.
@@ -471,7 +499,7 @@ void runConfig() {
 
   // If we have a new config for the number of pixels, reset the strip.
   if (cNumPixels != strip->numPixels()) {
-    makeNewStrip(configNumPixels);
+    makeNewStrip(configNumPixels, cDataPin, cClockPin);
   }
 
   if (cMode == "random") {
@@ -480,10 +508,6 @@ void runConfig() {
 
   USE_SERIAL.println("Running config: " + cMode + " enabled " + cEnabled);
 
-  strip->setBrightness(50);
-  candle(100);
-  return;
-  
   if (cMode == "none" || cMode == "off" || !cEnabled) {
     black();
     delay(1000);
@@ -523,7 +547,7 @@ void runConfig() {
 
   } else if (cMode == "rain") {
     strip->setBrightness(cBrightness);
-    rain(cColor, NUMPIXELS , cSpeed);
+    rain(cColor, NUMPIXELS, cSpeed);
 
   } else if (cMode == "comet") {
     strip->setBrightness(cBrightness);
@@ -533,7 +557,11 @@ void runConfig() {
     strip->setBrightness(cBrightness);
     candle(cSpeed);
 
+  } else if (cMode == "flicker") {
+    flicker(cColor, cBrightness, cSpeed);
+
   } else if (cMode == "test") {
+    strip->setBrightness(50);
     colorWipe(0xff0000, 5);
     colorWipe(0x00ff00, 5);
     colorWipe(0x0000ff, 5);
@@ -627,6 +655,14 @@ void readConfig() {
     configNumPixels = cc["numPixels"];
     if (configNumPixels == 0) {
       configNumPixels = NUMPIXELS;
+    }
+    configDataPin = cc["dataPin"];
+    if (configDataPin == 0) {
+      configDataPin = DEFAULT_DATA_PIN;
+    }
+    configClockPin = cc["clockPin"];
+    if (configClockPin == 0) {
+      configClockPin = DEFAULT_CLOCK_PIN;
     }
     configMode = (const String &)cc["mode"];
     configEnabled = (cc["enabled"] == true);
@@ -753,8 +789,6 @@ void updateFirmware() {
     return;
   }
 
-  
-  
   if (Update.end()) {
     USE_SERIAL.println("OTA done!");
   } else {
