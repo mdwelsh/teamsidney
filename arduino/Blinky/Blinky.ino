@@ -137,6 +137,12 @@ void flashLed() {
   delay(100);
 }
 
+void setPixel(int index, uint32_t c) {
+ // if (index >= 0 && index <= strip->numPixels()-1) {
+    strip->setPixelColor(index, c);
+ // }
+}
+
 void setAll(uint32_t c) {
   for (int i = 0; i < strip->numPixels(); i++) {
     strip->setPixelColor(i, c);
@@ -390,6 +396,98 @@ void flicker(uint32_t color, int brightness, int wait) {
   }
 }
 
+void skewBrightness() {
+  int b = strip->getBrightness();
+  int bc = random(0, 20);
+  if (random(0, 100) < 50) {
+    b -= bc;
+  } else {
+    b += bc;
+  }
+  if (b < 10) {
+    b = 10;
+  }
+  if (b > 120) {
+    b = 80;
+  }
+  strip->setBrightness(b);
+}
+
+#define MAX_PHANTOMS 5
+struct {
+  int index;
+  uint32_t color;
+  int dir;
+} phantomState[MAX_PHANTOMS];
+
+void movePhantom(int p) {
+  int pi = phantomState[p].index;
+  int r = random(0, 100);
+  if (random(0, 100) < 10) {
+    phantomState[p].dir *= -1;
+  }
+  int dir = phantomState[p].dir;
+  if (random(0, 100) > 10) {
+    return;
+  }
+  pi += dir;
+  if (pi < 1) {
+    pi = 1;
+  }
+  if (pi > strip->numPixels()-2) {
+    pi = strip->numPixels()-2;
+  }
+  phantomState[p].index = pi;
+}
+
+void drawPhantom(int p, int tail) {
+  int pi = phantomState[p].index;
+  uint32_t color = phantomState[p].color;
+  int dir = phantomState[p].dir * -1;
+  for (int j = 0; j < tail; j++) {
+    int index = pi + (j * dir);
+    float fade = (j*1.0) / (tail * 1.0);
+    if (fade > 1.0) {
+      fade = 1.0;
+    }
+    uint32_t tc = interpolate(color, 0, fade);
+    setPixel(index, tc);
+  }
+  for (int j = 0; j < tail/2; j++) {
+    int index = pi - (j * dir);
+    float fade = (j*1.0) / (tail * 1.0);
+    if (fade > 1.0) {
+      fade = 1.0;
+    }
+    uint32_t tc = interpolate(color, 0, fade);
+    setPixel(index, tc);
+  }
+}
+
+void phantom(uint32_t color, int numPhantoms, int tail, int wait) {
+  for (int p = 0; p < numPhantoms; p++) {
+    phantomState[p].index = random(1, strip->numPixels()-1);
+    phantomState[p].color = color;
+    if (random(0, 100) < 50) {
+      phantomState[p].dir = 1;
+    } else {
+      phantomState[p].dir = -1;
+    }
+  }
+  for (int i = 0; i < 1000; i++) {
+    if (random(0, 100) < 20) {
+      skewBrightness();
+    }
+    setAll(0);
+    for (int p = 0; p < numPhantoms; p++) {
+      movePhantom(p);
+      drawPhantom(p, tail);
+    }
+    strip->show();
+    delay(wait);
+  }
+}
+
 void bounce(uint32_t color, int wait) {
   colorWipe(0, 0); // Set to black.
 
@@ -562,6 +660,10 @@ void runConfig() {
 
   } else if (cMode == "flicker") {
     flicker(cColor, cBrightness, cSpeed);
+
+  } else if (cMode == "phantom") {
+    strip->setBrightness(cBrightness);
+    phantom(cColor, 3, 4, cSpeed);
 
   } else if (cMode == "test") {
     strip->setBrightness(50);
