@@ -114,6 +114,7 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
 
   makeNewStrip(NUMPIXELS, DEFAULT_DATA_PIN, DEFAULT_CLOCK_PIN);
+  initPhantoms();
   
   USE_SERIAL.begin(115200);
   USE_SERIAL.printf("Starting: %s\n", BUILD_VERSION);
@@ -376,7 +377,7 @@ void candle(int wait) {
 
 void flicker(uint32_t color, int brightness, int wait) {
   int curBright = brightness;
-  for (int cycle = 0; cycle < 1000; cycle++) {
+  for (int cycle = 0; cycle < 100; cycle++) {
     int step = random(0, 10);
     if (random(0, 10) < 5) {
       curBright += step;
@@ -386,8 +387,8 @@ void flicker(uint32_t color, int brightness, int wait) {
     if (curBright < 40) {
       curBright = 40;
     }
-    if (curBright > 120) {
-      curBright = 120;
+    if (curBright > brightness) {
+      curBright = brightness;
     }
     strip->setBrightness(curBright);
     colorWipe(color, 0);
@@ -419,6 +420,12 @@ struct {
   uint32_t color;
   int dir;
 } phantomState[MAX_PHANTOMS];
+
+void initPhantoms() {
+  for (int p = 0; p < MAX_PHANTOMS; p++) {
+    phantomState[p].index = -1;
+  }
+}
 
 void movePhantom(int p) {
   int pi = phantomState[p].index;
@@ -474,7 +481,11 @@ void phantom(uint32_t color, int numPhantoms, int tail, int wait) {
       phantomState[p].dir = -1;
     }
   }
-  for (int i = 0; i < 1000; i++) {
+  for (int p = numPhantoms; p < MAX_PHANTOMS; p++) {
+    phantomState[p].index = -1;
+  }
+  
+  for (int i = 0; i < 100; i++) {
     if (random(0, 100) < 20) {
       skewBrightness();
     }
@@ -571,6 +582,8 @@ uint32_t Wheel(byte WheelPos) {
   return strip->Color(WheelPos * 3, 255 - WheelPos * 3, 0);
 }
 
+int wheelPos = 0; // Current color changing wheel position.
+
 // Run the current config.
 void runConfig() {
   USE_SERIAL.println("runConfig mode: " + configMode);
@@ -605,6 +618,12 @@ void runConfig() {
 
   if (cMode == "random") {
     cMode = randomMode();
+  }
+
+  if (cColorChange > 0) {
+    wheelPos += cColorChange;
+    wheelPos = wheelPos % 255;
+    cColor = Wheel(wheelPos);
   }
 
   USE_SERIAL.println("Running config: " + cMode + " enabled " + cEnabled);
