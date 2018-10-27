@@ -12,6 +12,7 @@
 #include <Update.h>
 
 //#define USE_NEOPIXEL
+#define DOTSTAR_MATRIX
 
 #ifdef USE_NEOPIXEL
 #include <Adafruit_NeoPixel.h>
@@ -33,8 +34,16 @@ const char BUILD_VERSION[] = ("__Bl!nky__ " __DATE__ " " __TIME__ " ___");
 // Maximum number, for the sake of maintaining state.
 #define MAX_PIXELS 200
 #define NEOPIXEL_DATA_PIN 14
+
+#ifdef DOTSTAR_MATRIX
+// Settings for matrix board.
 #define DOTSTAR_DATA_PIN 27
 #define DOTSTAR_CLOCK_PIN 13
+#else
+// Settings for strip with Team Sidney connector PCB.
+#define DOTSTAR_DATA_PIN 14
+#define DOTSTAR_CLOCK_PIN 32
+#endif
 
 #ifdef USE_NEOPIXEL
 Adafruit_NeoPixel *strip = NULL;
@@ -230,30 +239,80 @@ void rainbow(uint8_t wait) {
   }
 }
 
-float rainState[MAX_PIXELS];
-void rain(uint32_t color, int maxdrops, int wait) {
-  USE_SERIAL.printf("Rain: Called with color %x drops %d wait %d\n", color, maxdrops, wait);
-  
+struct {
+  float value;
+  bool growing;
+} rainState[MAX_PIXELS];
+
+void rain(uint32_t color, int maxdrops, int wait, float initValue, float growSpeed, float fadeSpeed, bool expand) {  
   for (int i = 0; i < MAX_PIXELS; i++) {
-    rainState[i] = 0;
+    rainState[i].value = 0.0;
+    rainState[i].growing = false;
   }
-  for (int cycle = 0; cycle < maxdrops * 4; cycle++) {
+  for (int cycle = 0; cycle < maxdrops * 20; cycle++) {
     if (random(0, strip->numPixels()) <= maxdrops) {
       int p = random(0, strip->numPixels());
-      rainState[p] = 1.0;
+      if (rainState[p].value <= 0.0) {
+        rainState[p].value = initValue;
+        rainState[p].growing = true;
+      }
     }
     for (int i = 0; i < strip->numPixels(); i++) {
-      if (rainState[i] > 0.0) {
-        uint32_t tc = interpolate(0, color, rainState[i]);
-        rainState[i] -= 0.05;
-        strip->setPixelColor(i, tc);
-      } else {
-        strip->setPixelColor(i, 0);
+      float val = rainState[i].value;
+      if (val < 0.0) {
+        val = 0.0;
+      }
+      if (val > 1.0) {
+        val = 1.0;
+      }
+      uint32_t tc = interpolate(0, color, val);
+      strip->setPixelColor(i, tc);
+      
+      if (rainState[i].value >= 1.0) {
+        rainState[i].growing = false;
+        if (expand) {
+          int p = i-1;
+          if (p >= 0 && rainState[p].value <= 0.0) {
+            rainState[p].value = initValue;
+            rainState[p].growing = true;
+          }
+          p = i+1;
+          if (p < strip->numPixels() && rainState[p].value <= 0.0) {
+            rainState[p].value = initValue;
+            rainState[p].growing = true;
+          }
+        }
+      }
+      
+      if (rainState[i].value > 0.0) {
+        if (rainState[i].growing) {
+          rainState[i].value += growSpeed;
+        } else {
+          rainState[i].value -= fadeSpeed;
+        }
       }
     }
     strip->show();
     delay(wait);
   }
+}
+
+#define MAX_SPLATS 20
+struct {
+  int index;
+  int step;
+} splatState[MAX_SPLATS];
+
+void splat(uint32_t color, int wait) {
+  
+  for (int i = 0; i < MAX_SPLATS; i++) {
+    splatState[i].index = -1;
+  }
+}
+
+void halloween(int wait) {
+  strobe(0x9b009b, 20, wait);
+  strobe(0xff5500, 10, wait);
 }
 
 void rainbowCycle(uint8_t wait) {
@@ -667,7 +726,13 @@ void runConfig() {
 
   } else if (cMode == "rain") {
     strip->setBrightness(cBrightness);
-    rain(cColor, NUMPIXELS, cSpeed);
+    rain(cColor, NUMPIXELS, cSpeed, 1.0, 0.05, 0.05, false);
+
+  } else if (cMode == "snow") {
+    rain(cColor, NUMPIXELS, cSpeed, 0.02, 0.01, 0.2, false);
+
+  } else if (cMode == "sparkle") {
+    rain(cColor, NUMPIXELS, cSpeed, 1.0, 0, 0.4, false);
 
   } else if (cMode == "comet") {
     strip->setBrightness(cBrightness);
@@ -682,7 +747,10 @@ void runConfig() {
 
   } else if (cMode == "phantom") {
     strip->setBrightness(cBrightness);
-    phantom(cColor, 3, 4, cSpeed);
+    phantom(cColor, 5, 10, cSpeed);
+
+  } else if (cMode == "halloween") {
+    halloween(cSpeed);
 
   } else if (cMode == "test") {
     strip->setBrightness(50);
@@ -799,7 +867,10 @@ void readConfig() {
     configFirmwareVersion = (const String &)cc["version"];
 
     // If the firmware version needs to be updated, kick off the update.
-    if (configFirmwareVersion != BUILD_VERSION && configFirmwareVersion != "none" && configFirmwareVersion != "") {
+    if (configFirmwareVersion != BUILD_VERSION &&
+        configFirmwareVersion != "none" &&
+        configFirmwareVersion != "" &&
+        configFirmwareVersion != "current") {
       needsFirmwareUpdate = true;
     }
     
@@ -883,7 +954,6 @@ void updateFirmware() {
   readFirmwareMetadata(newVersion);
   USE_SERIAL.println("Read firmware metadata, URL is " + firmwareUrl);
   USE_SERIAL.println("Hash " + firmwareHash);
-  
 
   USE_SERIAL.println("Starting OTA...");
   http.begin(firmwareUrl);
