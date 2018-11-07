@@ -83,9 +83,8 @@ int configClockPin = DEFAULT_CLOCK_PIN;
 int configColorChange = 0;
 int configBrightness = 100;
 int configSpeed = 100;
-int configRed = 100;
-int configBlue = 100;
-int configGreen = 0;
+uint32_t configColor = 0;
+uint32_t configColor2 = 0;
 String configFirmwareVersion = "";
 
 // Next firmware URL and hash, for OTA update.
@@ -253,11 +252,12 @@ void rainbow(uint8_t wait) {
 }
 
 struct {
+  uint32_t color;
   float value;
   bool growing;
 } rainState[MAX_PIXELS];
 
-void rain(uint32_t color, int maxdrops, int wait, float initValue, float growSpeed, float fadeSpeed, bool expand) {  
+void rain(uint32_t color1, uint32_t color2, int maxdrops, int wait, float initValue, float growSpeed, float fadeSpeed, bool expand) {  
   for (int i = 0; i < MAX_PIXELS; i++) {
     rainState[i].value = 0.0;
     rainState[i].growing = false;
@@ -266,6 +266,10 @@ void rain(uint32_t color, int maxdrops, int wait, float initValue, float growSpe
     if (random(0, strip->numPixels()) <= maxdrops) {
       int p = random(0, strip->numPixels());
       if (rainState[p].value <= 0.0) {
+        rainState[p].color = color1;
+        if (color2 != 0 && random(0, 100) < 50) {
+          rainState[p].color = color2;
+        }
         rainState[p].value = initValue;
         rainState[p].growing = true;
       }
@@ -278,7 +282,7 @@ void rain(uint32_t color, int maxdrops, int wait, float initValue, float growSpe
       if (val > 1.0) {
         val = 1.0;
       }
-      uint32_t tc = interpolate(0, color, val);
+      uint32_t tc = interpolate(0, rainState[i].color, val);
       strip->setPixelColor(i, tc);
       
       if (rainState[i].value >= 1.0) {
@@ -286,11 +290,19 @@ void rain(uint32_t color, int maxdrops, int wait, float initValue, float growSpe
         if (expand) {
           int p = i-1;
           if (p >= 0 && rainState[p].value <= 0.0) {
+            rainState[p].color = color1;
+            if (color2 != 0 && random(0, 100) < 50) {
+              rainState[p].color = color2;
+            }
             rainState[p].value = initValue;
             rainState[p].growing = true;
           }
           p = i+1;
           if (p < strip->numPixels() && rainState[p].value <= 0.0) {
+            rainState[p].color = color1;
+            if (color2 != 0 && random(0, 100) < 50) {
+              rainState[p].color = color2;
+            }
             rainState[p].value = initValue;
             rainState[p].growing = true;
           }
@@ -362,9 +374,9 @@ void splat(uint32_t color, int wait) {
   }
 }
 
-void halloween(int wait) {
-  strobe(0x9b009b, 20, wait);
-  strobe(0xff5500, 10, wait);
+void halloween(uint32_t color1, uint32_t color2, int wait) {
+  strobe(color1, 20, wait);
+  //strobe(color2, 10, wait);
 }
 
 void rainbowCycle(uint8_t wait) {
@@ -701,7 +713,7 @@ void runConfig() {
   USE_SERIAL.println("runConfig mode: " + configMode);
 
   String cMode;
-  uint32_t cColor;
+  uint32_t cColor, cColor2;
   int cColorChange, cBrightness, cSpeed, cNumPixels, cDataPin, cClockPin;
   bool cEnabled;
 
@@ -709,7 +721,8 @@ void runConfig() {
   if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
     cEnabled = configEnabled;
     cMode = configMode;
-    cColor = strip->Color(configRed, configGreen, configBlue);
+    cColor = configColor;
+    cColor2 = configColor2;
     cColorChange = configColorChange;
     cBrightness = configBrightness;
     cSpeed = configSpeed;
@@ -736,6 +749,9 @@ void runConfig() {
     wheelPos += cColorChange;
     wheelPos = wheelPos % 255;
     cColor = Wheel(wheelPos);
+    if (cColor2 != 0) {
+      cColor2 = Wheel((wheelPos + 128) % 255);
+    }
   }
 
   // XXX MDW HACKING
@@ -783,16 +799,19 @@ void runConfig() {
   } else if (cMode == "strobe") {
     strip->setBrightness(cBrightness);
     strobe(cColor, 10, cSpeed);
+    if (cColor2 != 0) {
+      strobe(cColor2, 10, cSpeed);
+    }
 
   } else if (cMode == "rain") {
     strip->setBrightness(cBrightness);
-    rain(cColor, NUMPIXELS, cSpeed, 1.0, 0.05, 0.05, false);
+    rain(cColor, cColor2, NUMPIXELS, cSpeed, 1.0, 0.05, 0.05, false);
 
   } else if (cMode == "snow") {
-    rain(cColor, NUMPIXELS, cSpeed, 0.02, 0.01, 0.2, false);
+    rain(cColor, cColor2, NUMPIXELS, cSpeed, 0.02, 0.01, 0.2, false);
 
   } else if (cMode == "sparkle") {
-    rain(cColor, NUMPIXELS, cSpeed, 1.0, 0, 0.4, false);
+    rain(cColor, cColor2, NUMPIXELS, cSpeed, 1.0, 0, 0.4, false);
 
   } else if (cMode == "comet") {
     strip->setBrightness(cBrightness);
@@ -809,8 +828,6 @@ void runConfig() {
     strip->setBrightness(cBrightness);
     phantom(cColor, 5, 10, cSpeed);
 
-  } else if (cMode == "halloween") {
-    halloween(cSpeed);
 
   } else if (cMode == "test") {
     strip->setBrightness(50);
@@ -921,9 +938,9 @@ void readConfig() {
     configSpeed = cc["speed"];
     configBrightness = cc["brightness"];
     configColorChange = cc["colorChange"];
-    configRed = cc["red"];
-    configGreen = cc["green"];
-    configBlue = cc["blue"];
+    configColor = strip->Color(cc["red"], cc["green"], cc["blue"]);
+    configColor2 = strip->Color(cc["red2"], cc["green2"], cc["blue2"]);
+    USE_SERIAL.printf("color1 %x color2 %x\n", configColor, configColor2);
     configFirmwareVersion = (const String &)cc["version"];
 
     // If the firmware version needs to be updated, kick off the update.
