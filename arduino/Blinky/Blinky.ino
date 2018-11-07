@@ -26,8 +26,20 @@
 
 #define USE_SERIAL Serial
 
+#ifdef USE_NEOPIXEL
+#define DEVICE_TYPE "Neopixel"
+#else
+#define DEVICE_TYPE "Dotstar"
+#endif
+
+#ifdef DOTSTAR_MATRIX
+#define DEVICE_FORMFACTOR "matrix"
+#else
+#define DEVICE_FORMFACTOR "strip"
+#endif
+
 // We use some magic strings in this constant to ensure that we can easily strip it out of the binary.
-const char BUILD_VERSION[] = ("__Bl!nky__ " __DATE__ " " __TIME__ " ___");
+const char BUILD_VERSION[] = ("__Bl!nky__ " __DATE__ " " __TIME__ " " DEVICE_TYPE " " DEVICE_FORMFACTOR " ___");
 
 // Start with this many pixels, but can be reconfigured.
 #define NUMPIXELS 72
@@ -148,9 +160,9 @@ void flashLed() {
 }
 
 void setPixel(int index, uint32_t c) {
- // if (index >= 0 && index <= strip->numPixels()-1) {
+ if (index >= 0 && index <= strip->numPixels()-1) {
     strip->setPixelColor(index, c);
- // }
+ }
 }
 
 void setAll(uint32_t c) {
@@ -297,16 +309,55 @@ void rain(uint32_t color, int maxdrops, int wait, float initValue, float growSpe
   }
 }
 
-#define MAX_SPLATS 20
+#define MAX_SPLATS 1
+#define MAX_SPLAT_STEPS 20
 struct {
   int index;
   int step;
 } splatState[MAX_SPLATS];
 
 void splat(uint32_t color, int wait) {
-  
   for (int i = 0; i < MAX_SPLATS; i++) {
     splatState[i].index = -1;
+  }
+  int curSplat = 0;
+  for (int c = 0; c < 100; c++) {
+    if (splatState[curSplat].index == -1) {
+      // Start a new splat.
+      splatState[curSplat].index = random(0, strip->numPixels());
+      splatState[curSplat].step = 0;
+      USE_SERIAL.printf("Adding splat %d at index %d\n", curSplat, splatState[curSplat].index);
+      curSplat++;
+      curSplat = curSplat % MAX_SPLATS; 
+    }
+
+    for (int s = 0; s < MAX_SPLATS; s++) {
+      int index = splatState[s].index;
+      if (index == -1) continue;
+      int st = splatState[s].step;
+      float baseVal;
+      int spread;
+
+      if (st < MAX_SPLAT_STEPS) {
+        baseVal = st / (MAX_SPLAT_STEPS * 1.0);
+      } else if (st < 2*MAX_SPLAT_STEPS) {
+        baseVal = 1.0 - ((st-(2*MAX_SPLAT_STEPS)) / (MAX_SPLAT_STEPS*1.0));
+      } else {
+        baseVal = 0.0;
+      }
+      
+      spread = st;
+      for (int i = 0; i < spread; i++) {
+        //float val = baseVal - (baseVal / spread);
+        float val = baseVal;
+        uint32_t tc = interpolate(0, color, val);
+        setPixel(index + i, tc);
+        setPixel(index - i, tc);
+      } 
+      splatState[s].step++;
+    }
+    strip->show();
+    delay(wait);
   }
 }
 
@@ -395,13 +446,13 @@ void incrementFire(int index) {
   }
   c += 0x100400;
   strip->setPixelColor(index, c);
-  strip->show();
 }
 
 void fire(int cycles, int wait) {
   colorWipe(0, 0); // Set to black.
 
-  int start = random(0, strip->numPixels());
+  //int start = random(0, strip->numPixels());
+  int start = 32+8;
   strip->setPixelColor(start, 0x100400);
   strip->show();
   delay(wait);
@@ -416,6 +467,7 @@ void fire(int cycles, int wait) {
       incrementFire(i);
       incrementFire(i+1);
       incrementFire(i-1);
+      strip->show();
       delay(wait);
       break;
     }
@@ -684,6 +736,10 @@ void runConfig() {
     wheelPos = wheelPos % 255;
     cColor = Wheel(wheelPos);
   }
+
+  // XXX MDW HACKING
+  splat(0xff0000, 100);
+  return;
 
   USE_SERIAL.println("Running config: " + cMode + " enabled " + cEnabled);
 
