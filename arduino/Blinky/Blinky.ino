@@ -145,8 +145,9 @@ void setup() {
     USE_SERIAL.flush();
     delay(1000);
   }
-  wifiMulti.addAP("theonet_EXT", "juneaudog");
-
+  //wifiMulti.addAP("theonet_EXT", "juneaudog");
+  wifiMulti.addAP("GIN-3g", "testing3g");
+  
   configMutex = xSemaphoreCreateMutex();
   xTaskCreate(TaskCheckin, (const char *)"Checkin", 1024*40, NULL, 2, NULL);
   xTaskCreate(TaskRunConfig, (const char *)"Run config", 1024*40, NULL, 8, NULL);
@@ -738,8 +739,11 @@ void runConfig() {
   }
 
   // XXX MDW HACKING
-  splat(0xff0000, 100);
-  return;
+  //splat(0xff0000, 100);
+  //return;
+  //strip->setBrightness(255);
+  //strobe(0xff0000, 10, 100);
+  //return;
 
   USE_SERIAL.println("Running config: " + cMode + " enabled " + cEnabled);
 
@@ -833,7 +837,7 @@ void checkin() {
   http.begin(url);
 
   String curModeJson;
-  StaticJsonDocument<512> checkinDoc;
+  StaticJsonDocument<1024> checkinDoc;
   JsonObject checkinPayload = checkinDoc.to<JsonObject>();
 
   // This is Firebase magic to cause a server variable to be set with the current server timestamp on receipt.
@@ -864,7 +868,7 @@ void checkin() {
   
   int httpCode = http.PUT(payload);
   if (httpCode > 0) {
-    USE_SERIAL.printf("[HTTP] Response code: %d\n", httpCode);
+    USE_SERIAL.printf("[HTTP] Checkin response code: %d\n", httpCode);
     String payload = http.getString();
     USE_SERIAL.println(payload);
   } else {
@@ -877,7 +881,7 @@ void readConfig() {
   USE_SERIAL.println("readConfig called");
   
   String url = "https://team-sidney.firebaseio.com/strips/" + WiFi.macAddress() + ".json";
-  http.setTimeout(1000);
+  http.setTimeout(10000);
   http.begin(url);
 
   USE_SERIAL.print("[HTTP] GET " + url + "\n");
@@ -888,7 +892,7 @@ void readConfig() {
   }
   
   String payload = http.getString();
-  USE_SERIAL.printf("[HTTP] Response code: %d\n", httpCode);
+  USE_SERIAL.printf("[HTTP] readConfig response code: %d\n", httpCode);
   USE_SERIAL.println(payload);
 
   bool needsFirmwareUpdate = false;
@@ -978,7 +982,7 @@ void readFirmwareMetadata(String firmwareVersion) {
   }
   
   String payload = http.getString();
-  USE_SERIAL.printf("[HTTP] Response code: %d\n", httpCode);
+  USE_SERIAL.printf("[HTTP] readFirmwareMetadata response code: %d\n", httpCode);
   USE_SERIAL.println(payload);
 
   // Parse JSON config.
