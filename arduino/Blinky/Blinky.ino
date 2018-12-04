@@ -83,9 +83,8 @@ int configClockPin = DEFAULT_CLOCK_PIN;
 int configColorChange = 0;
 int configBrightness = 100;
 int configSpeed = 100;
-int configRed = 100;
-int configBlue = 100;
-int configGreen = 0;
+uint32_t configColor = 0;
+uint32_t configColor2 = 0;
 String configFirmwareVersion = "";
 
 // Next firmware URL and hash, for OTA update.
@@ -157,8 +156,9 @@ void setup() {
     USE_SERIAL.flush();
     delay(1000);
   }
-  wifiMulti.addAP("theonet_EXT", "juneaudog");
-
+  //wifiMulti.addAP("theonet_EXT", "juneaudog");
+  wifiMulti.addAP("GIN-3g", "testing3g");
+  
   configMutex = xSemaphoreCreateMutex();
   xTaskCreate(TaskCheckin, (const char *)"Checkin", 1024*40, NULL, 2, NULL);
   xTaskCreate(TaskRunConfig, (const char *)"Run config", 1024*40, NULL, 8, NULL);
@@ -266,6 +266,7 @@ void rainbow(uint8_t wait) {
 }
 
 struct {
+  uint32_t color;
   float value;
   bool growing;
 } rainState[MAX_PIXELS];
@@ -405,9 +406,9 @@ void splat(uint32_t color, int wait) {
   }
 }
 
-void halloween(int wait) {
-  strobe(0x9b009b, 20, wait);
-  strobe(0xff5500, 10, wait);
+void halloween(uint32_t color1, uint32_t color2, int wait) {
+  strobe(color1, 20, wait);
+  //strobe(color2, 10, wait);
 }
 
 void rainbowCycle(uint8_t wait) {
@@ -806,7 +807,7 @@ void runConfig() {
   USE_SERIAL.println("runConfig mode: " + configMode);
 
   String cMode;
-  uint32_t cColor;
+  uint32_t cColor, cColor2;
   int cColorChange, cBrightness, cSpeed, cNumPixels, cDataPin, cClockPin;
   bool cEnabled;
 
@@ -814,7 +815,8 @@ void runConfig() {
   if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
     cEnabled = configEnabled;
     cMode = configMode;
-    cColor = strip->Color(configRed, configGreen, configBlue);
+    cColor = configColor;
+    cColor2 = configColor2;
     cColorChange = configColorChange;
     cBrightness = configBrightness;
     cSpeed = configSpeed;
@@ -851,6 +853,9 @@ void runConfig() {
     wheelPos += cColorChange;
     wheelPos = wheelPos % 255;
     cColor = Wheel(wheelPos);
+    if (cColor2 != 0) {
+      cColor2 = Wheel((wheelPos + 128) % 255);
+    }
   }
 
   USE_SERIAL.println("Running config: " + cMode + " enabled " + cEnabled);
@@ -891,6 +896,9 @@ void runConfig() {
   } else if (cMode == "strobe") {
     strip->setBrightness(cBrightness);
     strobe(cColor, 10, cSpeed);
+    if (cColor2 != 0) {
+      strobe(cColor2, 10, cSpeed);
+    }
 
   } else if (cMode == "rain") {
     strip->setBrightness(cBrightness);
@@ -927,8 +935,6 @@ void runConfig() {
     strip->setBrightness(cBrightness);
     phantom(cColor, 5, 10, cSpeed);
 
-  } else if (cMode == "halloween") {
-    halloween(cSpeed);
 
   } else if (cMode == "christmas") {
     strip->setBrightness(cBrightness);
@@ -1002,7 +1008,7 @@ void checkin() {
   
   int httpCode = http.PUT(payload);
   if (httpCode > 0) {
-    USE_SERIAL.printf("[HTTP] Response code: %d\n", httpCode);
+    USE_SERIAL.printf("[HTTP] Checkin response code: %d\n", httpCode);
     String payload = http.getString();
     USE_SERIAL.println(payload);
   } else {
@@ -1015,7 +1021,7 @@ void readConfig() {
   USE_SERIAL.println("readConfig called");
   
   String url = "https://team-sidney.firebaseio.com/strips/" + WiFi.macAddress() + ".json";
-  http.setTimeout(1000);
+  http.setTimeout(10000);
   http.begin(url);
 
   USE_SERIAL.print("[HTTP] GET " + url + "\n");
@@ -1026,7 +1032,7 @@ void readConfig() {
   }
   
   String payload = http.getString();
-  USE_SERIAL.printf("[HTTP] Response code: %d\n", httpCode);
+  USE_SERIAL.printf("[HTTP] readConfig response code: %d\n", httpCode);
   USE_SERIAL.println(payload);
 
   bool needsFirmwareUpdate = false;
@@ -1055,9 +1061,9 @@ void readConfig() {
     configSpeed = cc["speed"];
     configBrightness = cc["brightness"];
     configColorChange = cc["colorChange"];
-    configRed = cc["red"];
-    configGreen = cc["green"];
-    configBlue = cc["blue"];
+    configColor = strip->Color(cc["red"], cc["green"], cc["blue"]);
+    configColor2 = strip->Color(cc["red2"], cc["green2"], cc["blue2"]);
+    USE_SERIAL.printf("color1 %x color2 %x\n", configColor, configColor2);
     configFirmwareVersion = (const String &)cc["version"];
 
     // If the firmware version needs to be updated, kick off the update.
@@ -1116,7 +1122,7 @@ void readFirmwareMetadata(String firmwareVersion) {
   }
   
   String payload = http.getString();
-  USE_SERIAL.printf("[HTTP] Response code: %d\n", httpCode);
+  USE_SERIAL.printf("[HTTP] readFirmwareMetadata response code: %d\n", httpCode);
   USE_SERIAL.println(payload);
 
   // Parse JSON config.
