@@ -44,7 +44,7 @@ const char BUILD_VERSION[] = ("__Bl!nky__ " __DATE__ " " __TIME__ " " DEVICE_TYP
 // Start with this many pixels, but can be reconfigured.
 #define NUMPIXELS 72
 // Maximum number, for the sake of maintaining state.
-#define MAX_PIXELS 200
+#define MAX_PIXELS 255
 #define NEOPIXEL_DATA_PIN 14
 
 #ifdef DOTSTAR_MATRIX
@@ -70,7 +70,7 @@ Adafruit_DotStar *strip = NULL;
 WiFiMulti wifiMulti;
 HTTPClient http;
 
-StaticJsonDocument<512> curConfigDocument;
+StaticJsonDocument<1024> curConfigDocument;
 // Maximum length of configMode string.
 #define MAX_MODE_LEN 16
 
@@ -105,6 +105,16 @@ const String RANDOM_MODES[] = {
   "comet",
 };
 
+#define NUM_CHRISTMAS_COLORS 5
+const uint32_t CHRISTMAS_COLORS[] = {
+  0xff0000,
+  0x00ff00,
+  0x0000ff,
+  0xff00ff,
+  0xffac00,
+};
+
+
 SemaphoreHandle_t configMutex = NULL;
 void TaskFlash(void *);
 void TaskCheckin(void *);
@@ -136,6 +146,7 @@ void setup() {
 
   makeNewStrip(NUMPIXELS, DEFAULT_DATA_PIN, DEFAULT_CLOCK_PIN);
   initPhantoms();
+  initChristmas();
   
   USE_SERIAL.begin(115200);
   USE_SERIAL.printf("Starting: %s\n", BUILD_VERSION);
@@ -245,6 +256,8 @@ void rainbow(uint8_t wait) {
   for(j=0; j<256; j++) {
     for(i=0; i<strip->numPixels(); i++) {
       strip->setPixelColor(i, Wheel((i+j) & 255));
+      //strip->setPixelColor(i, Wheel(j));
+      //strip->setPixelColor(i, Wheel(i));
     }
     strip->show();
     delay(wait);
@@ -695,6 +708,68 @@ uint32_t Wheel(byte WheelPos) {
 
 int wheelPos = 0; // Current color changing wheel position.
 
+struct {
+  byte wheelPos;
+  float brightness;
+} christmasState[MAX_PIXELS];
+
+void initChristmas() {
+  for (int i = 0; i < MAX_PIXELS; i++) {
+    christmasState[i].wheelPos = 0;
+    christmasState[i].brightness = 1.0;
+  }
+}
+
+void christmas(int wait, bool doRandom, bool twinkle) {
+  for(uint16_t i=0; i < strip->numPixels(); i++) {
+    uint32_t c;
+    if (doRandom) {
+      if (christmasState[i].wheelPos == 0) {
+        christmasState[i].wheelPos = random(1, NUM_CHRISTMAS_COLORS);
+        christmasState[i].brightness = 1.0;
+      }
+      c = CHRISTMAS_COLORS[christmasState[i].wheelPos-1];
+    } else {
+      c = CHRISTMAS_COLORS[i % NUM_CHRISTMAS_COLORS];
+    }
+    if (twinkle) {
+      if (random(0, 100) <= 25) {
+        float step = random(0, 10) / 100.0;
+        if (random(0, 10) < 5) {
+          christmasState[i].brightness += step;
+        } else {
+          christmasState[i].brightness -= step;
+        }
+        if (christmasState[i].brightness < 0.2) {
+          christmasState[i].brightness = 0.2;
+        }
+        if (christmasState[i].brightness > 1.0) {
+          christmasState[i].brightness = 1.0;
+        }
+      }
+      c = interpolate(0, c, christmasState[i].brightness);
+    }
+    strip->setPixelColor(i, c);
+  }
+  strip->show();
+  delay(wait);
+}
+
+void christmasRainbow(int wait) {
+  for(uint16_t i=0; i < strip->numPixels(); i++) {
+    uint32_t c;
+    if (christmasState[i].wheelPos == 0) {
+      christmasState[i].wheelPos = random(1, 255);
+    }
+    christmasState[i].wheelPos += 1;
+    christmasState[i].wheelPos %= 255;
+    c = Wheel(christmasState[i].wheelPos);
+    strip->setPixelColor(i, c);
+  }
+  strip->show();
+  delay(wait);
+}
+
 // Run the current config.
 void runConfig() {
   USE_SERIAL.println("runConfig mode: " + configMode);
@@ -738,8 +813,10 @@ void runConfig() {
   }
 
   // XXX MDW HACKING
-  splat(0xff0000, 100);
-  return;
+  cMode = "christmas";
+  cEnabled = true;
+  cBrightness = 40;
+  cSpeed = 100;
 
   USE_SERIAL.println("Running config: " + cMode + " enabled " + cEnabled);
 
@@ -808,6 +885,19 @@ void runConfig() {
   } else if (cMode == "halloween") {
     halloween(cSpeed);
 
+  } else if (cMode == "christmas") {
+    strip->setBrightness(cBrightness);
+    christmas(cSpeed, false, true);
+
+  } else if (cMode == "christmasRandom") {
+    strip->setBrightness(cBrightness);
+    christmas(cSpeed, true, false);
+
+
+  } else if (cMode == "christmasRainbow") {
+    strip->setBrightness(cBrightness);
+    christmasRainbow(cSpeed);
+
   } else if (cMode == "test") {
     strip->setBrightness(50);
     colorWipe(0xff0000, 5);
@@ -833,7 +923,7 @@ void checkin() {
   http.begin(url);
 
   String curModeJson;
-  StaticJsonDocument<512> checkinDoc;
+  StaticJsonDocument<1024> checkinDoc;
   JsonObject checkinPayload = checkinDoc.to<JsonObject>();
 
   // This is Firebase magic to cause a server variable to be set with the current server timestamp on receipt.
