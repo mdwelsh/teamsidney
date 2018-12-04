@@ -145,6 +145,7 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
 
   makeNewStrip(NUMPIXELS, DEFAULT_DATA_PIN, DEFAULT_CLOCK_PIN);
+  initRain();
   initPhantoms();
   initChristmas();
   
@@ -269,57 +270,87 @@ struct {
   bool growing;
 } rainState[MAX_PIXELS];
 
-void rain(uint32_t color, int maxdrops, int wait, float initValue, float growSpeed, float fadeSpeed, bool expand) {  
+void initRain() {
   for (int i = 0; i < MAX_PIXELS; i++) {
     rainState[i].value = 0.0;
     rainState[i].growing = false;
   }
-  for (int cycle = 0; cycle < maxdrops * 20; cycle++) {
+}
+
+void rain(uint32_t color, int maxdrops, int wait,
+  float initValue, float maxValue, float minValue,
+  float growSpeed, float fadeSpeed, bool multi, bool randInit) {  
+    
+  int numActive = 0;
+
+  for (int i = 0; i < strip->numPixels(); i++) {
+    if (rainState[i].growing) {
+      //USE_SERIAL.printf("Pixel %d is growing and has value %f\n", i, rainState[i].value);
+      numActive++;
+    }
+  }
+
+  // See if we need to fire up more pixels.
+  if (multi) {
+    //USE_SERIAL.printf("numActive: %d\n", numActive);
+    if (numActive == 0) {
+      // New pixels start all at once
+      for (int i = 0; i < maxdrops; i++) {
+        int p = random(0, strip->numPixels());
+        if (rainState[p].value <= minValue) {
+          if (randInit) {
+            rainState[p].value = random(minValue * 100, maxValue * 100) / 100.0;
+            rainState[p].growing = (random(0, 100) < 50) ? true : false;
+          } else {
+            rainState[p].value = initValue;
+            rainState[p].growing = true;
+          }
+        }
+      }
+    }
+  } else {
+    // Randomly start new pixels
     if (random(0, strip->numPixels()) <= maxdrops) {
       int p = random(0, strip->numPixels());
-      if (rainState[p].value <= 0.0) {
-        rainState[p].value = initValue;
-        rainState[p].growing = true;
-      }
-    }
-    for (int i = 0; i < strip->numPixels(); i++) {
-      float val = rainState[i].value;
-      if (val < 0.0) {
-        val = 0.0;
-      }
-      if (val > 1.0) {
-        val = 1.0;
-      }
-      uint32_t tc = interpolate(0, color, val);
-      strip->setPixelColor(i, tc);
-      
-      if (rainState[i].value >= 1.0) {
-        rainState[i].growing = false;
-        if (expand) {
-          int p = i-1;
-          if (p >= 0 && rainState[p].value <= 0.0) {
-            rainState[p].value = initValue;
-            rainState[p].growing = true;
-          }
-          p = i+1;
-          if (p < strip->numPixels() && rainState[p].value <= 0.0) {
-            rainState[p].value = initValue;
-            rainState[p].growing = true;
-          }
-        }
-      }
-      
-      if (rainState[i].value > 0.0) {
-        if (rainState[i].growing) {
-          rainState[i].value += growSpeed;
+      if (rainState[p].value <= minValue) {
+        if (randInit) {
+          rainState[p].value = random(minValue * 100, maxValue * 100) / 100.0;
+          rainState[p].growing = (random(0, 100) < 50) ? true : false;
         } else {
-          rainState[i].value -= fadeSpeed;
+          rainState[p].value = initValue;
+          rainState[p].growing = true;
         }
       }
     }
-    strip->show();
-    delay(wait);
   }
+
+  // Do an update cycle.
+  for (int i = 0; i < strip->numPixels(); i++) {
+    float val = rainState[i].value;
+    if (val <= minValue) {
+      val = minValue;
+    }
+    if (val >= maxValue) {
+      val = maxValue;
+    }
+
+    uint32_t tc = interpolate(0, color, val);
+    strip->setPixelColor(i, tc);
+    
+    if (rainState[i].value >= maxValue) {
+      rainState[i].growing = false;
+    }
+      
+    if (rainState[i].value >= minValue) {
+      if (rainState[i].growing) {
+        rainState[i].value += growSpeed;
+      } else {
+        rainState[i].value -= fadeSpeed;
+      }
+    }
+  }
+  strip->show();
+  delay(wait);
 }
 
 #define MAX_SPLATS 1
@@ -806,17 +837,21 @@ void runConfig() {
     cMode = randomMode();
   }
 
+#if 0
+  // XXX MDW HACKING
+  cMode = "twinkle";
+  cEnabled = true;
+  cBrightness = 40;
+  cSpeed = 100;
+  cColor = 0xff5000;
+  cColorChange = 0;
+#endif
+
   if (cColorChange > 0) {
     wheelPos += cColorChange;
     wheelPos = wheelPos % 255;
     cColor = Wheel(wheelPos);
   }
-
-  // XXX MDW HACKING
-  cMode = "christmas";
-  cEnabled = true;
-  cBrightness = 40;
-  cSpeed = 100;
 
   USE_SERIAL.println("Running config: " + cMode + " enabled " + cEnabled);
 
@@ -859,13 +894,23 @@ void runConfig() {
 
   } else if (cMode == "rain") {
     strip->setBrightness(cBrightness);
-    rain(cColor, NUMPIXELS, cSpeed, 1.0, 0.05, 0.05, false);
+    rain(cColor, NUMPIXELS, cSpeed, 1.0, 1.0, 0.0, 0.05, 0.05, false, false);
 
   } else if (cMode == "snow") {
-    rain(cColor, NUMPIXELS, cSpeed, 0.02, 0.01, 0.2, false);
+    strip->setBrightness(cBrightness);
+    rain(cColor, NUMPIXELS, cSpeed, 0.02, 1.0, 0.0, 0.01, 0.2, false, false);
 
   } else if (cMode == "sparkle") {
-    rain(cColor, NUMPIXELS, cSpeed, 1.0, 0, 0.4, false);
+    strip->setBrightness(cBrightness);
+    rain(cColor, NUMPIXELS, cSpeed, 1.0, 1.0, 0.0, 0, 0.4, false, false);
+
+  } else if (cMode == "shimmer") {
+    strip->setBrightness(cBrightness);
+    rain(cColor, 10, cSpeed, 0.1, 1.0, 0.0, 0.2, 0.05, true, false);
+
+  } else if (cMode == "twinkle") {
+    strip->setBrightness(cBrightness);
+    rain(cColor, NUMPIXELS, cSpeed, 0.2, 0.8, 0.0, 0.1, 0.05, false, true);
 
   } else if (cMode == "comet") {
     strip->setBrightness(cBrightness);
@@ -889,10 +934,13 @@ void runConfig() {
     strip->setBrightness(cBrightness);
     christmas(cSpeed, false, true);
 
+  } else if (cMode == "christmasBoring") {
+    strip->setBrightness(cBrightness);
+    christmas(cSpeed, false, false);
+
   } else if (cMode == "christmasRandom") {
     strip->setBrightness(cBrightness);
-    christmas(cSpeed, true, false);
-
+    christmas(cSpeed, true, true);
 
   } else if (cMode == "christmasRainbow") {
     strip->setBrightness(cBrightness);
