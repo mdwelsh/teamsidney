@@ -44,7 +44,7 @@ const char BUILD_VERSION[] = ("__Bl!nky__ " __DATE__ " " __TIME__ " " DEVICE_TYP
 // Start with this many pixels, but can be reconfigured.
 #define NUMPIXELS 72
 // Maximum number, for the sake of maintaining state.
-#define MAX_PIXELS 255
+#define MAX_PIXELS 350
 #define NEOPIXEL_DATA_PIN 14
 
 #ifdef DOTSTAR_MATRIX
@@ -104,15 +104,6 @@ const String RANDOM_MODES[] = {
   "comet",
 };
 
-#define NUM_CHRISTMAS_COLORS 5
-const uint32_t CHRISTMAS_COLORS[] = {
-  0xff0000,
-  0x00ff00,
-  0x0000ff,
-  0xff00ff,
-  0xffac00,
-};
-
 
 SemaphoreHandle_t configMutex = NULL;
 void TaskFlash(void *);
@@ -146,7 +137,7 @@ void setup() {
   makeNewStrip(NUMPIXELS, DEFAULT_DATA_PIN, DEFAULT_CLOCK_PIN);
   initRain();
   initPhantoms();
-  initChristmas();
+  initLightUp();
   
   USE_SERIAL.begin(115200);
   USE_SERIAL.printf("Starting: %s\n", BUILD_VERSION);
@@ -156,8 +147,7 @@ void setup() {
     USE_SERIAL.flush();
     delay(1000);
   }
-  //wifiMulti.addAP("theonet_EXT", "juneaudog");
-  wifiMulti.addAP("GIN-3g", "testing3g");
+  wifiMulti.addAP("theonet_EXT", "juneaudog");
   
   configMutex = xSemaphoreCreateMutex();
   xTaskCreate(TaskCheckin, (const char *)"Checkin", 1024*40, NULL, 2, NULL);
@@ -740,18 +730,110 @@ uint32_t Wheel(byte WheelPos) {
 
 int wheelPos = 0; // Current color changing wheel position.
 
+class PixelMapper {
+public:
+  virtual uint32_t PixelColor(int index) = 0;
+};
+
+class SingleColorMapper : public PixelMapper {
+public:
+  SingleColorMapper(uint32_t c) : _color(c) {}
+  uint32_t PixelColor(int index) { return _color; }
+
+private:
+  uint32_t _color;
+};
+
+class MultiColorMapper : public PixelMapper {
+public:
+  MultiColorMapper(const uint32_t *colors, int numcolors) : _colors(colors), _numcolors(numcolors) {}
+  uint32_t PixelColor(int index) { return _colors[index % _numcolors]; }
+protected:
+  const uint32_t *_colors;
+  int _numcolors;
+};
+
+class RandomColorMapper : public MultiColorMapper {
+public:
+  RandomColorMapper(const uint32_t *colors, int numcolors) : MultiColorMapper(colors, numcolors) {}
+  uint32_t PixelColor(int index) { return _colors[random(0, _numcolors-1)]; }
+};
+
+class Twinkler : public PixelMapper {
+public:
+  Twinkler(PixelMapper *mapper, int stepRange, float minBrightness, float maxBrightness)
+    : _mapper(mapper), _stepRange(stepRange), _minBrightness(minBrightness), _maxBrightness(maxBrightness) {
+    for (int i = 0; i < MAX_PIXELS; i++) {
+      _brightness[i] = minBrightness + ((maxBrightness-minBrightness)/2.0);
+    }
+  }
+
+  uint32_t PixelColor(int index) {
+    uint32_t color = _mapper->PixelColor(index);
+    float b = _brightness[index];
+    float step = random(0, _stepRange) / 100.0;
+    if (random(0, 10) < 5) {
+      b += step;
+    } else {
+      b -= step;
+    }
+    if (b < _minBrightness) b = _minBrightness;
+    if (b > _maxBrightness) b = _maxBrightness;
+    _brightness[index] = b;
+    color = interpolate(0, color, b);
+    return color;
+  }
+
+private:
+  PixelMapper *_mapper;
+  int _stepRange;
+  float _minBrightness;
+  float _maxBrightness;
+  float _brightness[MAX_PIXELS];
+};
+
 struct {
+  uint32_t color;
   byte wheelPos;
   float brightness;
-} christmasState[MAX_PIXELS];
+} lightUpState[MAX_PIXELS];
 
-void initChristmas() {
+#define NUM_CHRISTMAS_COLORS 5
+const uint32_t CHRISTMAS_COLORS[] = {
+  0xff0000,
+  0x00ff00,
+  0x0000ff,
+  0xff00ff,
+  0xffac00,
+};
+
+PixelMapper *christmasTwinkler;
+
+void initLightUp() {
   for (int i = 0; i < MAX_PIXELS; i++) {
-    christmasState[i].wheelPos = 0;
-    christmasState[i].brightness = 1.0;
+    lightUpState[i].color = 0x0;
+    lightUpState[i].wheelPos = 0;
+    lightUpState[i].brightness = 1.0;
   }
+
+  christmasTwinkler = new Twinkler(
+    new MultiColorMapper(CHRISTMAS_COLORS, NUM_CHRISTMAS_COLORS), 10, 0.2, 1.0);  
 }
 
+void lightUp(class PixelMapper *pm, int wait) {
+  for(uint16_t i = 0; i < strip->numPixels(); i++) {
+    uint32_t c = pm->PixelColor(i);
+    strip->setPixelColor(i, c);
+  }
+  strip->show();
+  delay(wait);
+}
+
+void lightUpSimple(uint32_t color, int wait) {
+  lightUp(christmasTwinkler, wait);
+}
+
+#if 0
 void christmas(int wait, bool doRandom, bool twinkle) {
   for(uint16_t i=0; i < strip->numPixels(); i++) {
     uint32_t c;
@@ -801,6 +883,7 @@ void christmasRainbow(int wait) {
   strip->show();
   delay(wait);
 }
+#endif
 
 // Run the current config.
 void runConfig() {
@@ -848,6 +931,9 @@ void runConfig() {
   cColor = 0xff5000;
   cColorChange = 0;
 #endif
+
+  lightUpSimple(0xff0000, 100);
+  return;
 
   if (cColorChange > 0) {
     wheelPos += cColorChange;
@@ -902,15 +988,15 @@ void runConfig() {
 
   } else if (cMode == "rain") {
     strip->setBrightness(cBrightness);
-    rain(cColor, NUMPIXELS, cSpeed, 1.0, 1.0, 0.0, 0.05, 0.05, false, false);
+    rain(cColor, strip->numPixels(), cSpeed, 1.0, 1.0, 0.0, 0.05, 0.05, false, false);
 
   } else if (cMode == "snow") {
     strip->setBrightness(cBrightness);
-    rain(cColor, NUMPIXELS, cSpeed, 0.02, 1.0, 0.0, 0.01, 0.2, false, false);
+    rain(cColor, strip->numPixels(), cSpeed, 0.02, 1.0, 0.0, 0.01, 0.2, false, false);
 
   } else if (cMode == "sparkle") {
     strip->setBrightness(cBrightness);
-    rain(cColor, NUMPIXELS, cSpeed, 1.0, 1.0, 0.0, 0, 0.4, false, false);
+    rain(cColor, strip->numPixels(), cSpeed, 1.0, 1.0, 0.0, 0, 0.4, false, false);
 
   } else if (cMode == "shimmer") {
     strip->setBrightness(cBrightness);
@@ -918,7 +1004,7 @@ void runConfig() {
 
   } else if (cMode == "twinkle") {
     strip->setBrightness(cBrightness);
-    rain(cColor, NUMPIXELS, cSpeed, 0.2, 0.8, 0.0, 0.1, 0.05, false, true);
+    rain(cColor, strip->numPixels(), cSpeed, 0.2, 0.8, 0.0, 0.1, 0.05, false, true);
 
   } else if (cMode == "comet") {
     strip->setBrightness(cBrightness);
@@ -935,7 +1021,7 @@ void runConfig() {
     strip->setBrightness(cBrightness);
     phantom(cColor, 5, 10, cSpeed);
 
-
+#if 0
   } else if (cMode == "christmas") {
     strip->setBrightness(cBrightness);
     christmas(cSpeed, false, true);
@@ -951,6 +1037,7 @@ void runConfig() {
   } else if (cMode == "christmasRainbow") {
     strip->setBrightness(cBrightness);
     christmasRainbow(cSpeed);
+#endif
 
   } else if (cMode == "test") {
     strip->setBrightness(50);
