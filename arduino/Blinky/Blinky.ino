@@ -6,6 +6,7 @@
  * the database to control the LED pattern.
  */
 
+
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <freertos/task.h>
@@ -14,77 +15,22 @@
 #include <WiFiMulti.h>
 #include <HTTPClient.h>
 
-// Define the below to use Neopixels instead of DotStars.
-//#define USE_NEOPIXEL
-// Define the below to use a Dotstar matrix instead of a strip.
-#define DOTSTAR_MATRIX
-
-#ifdef USE_NEOPIXEL
-#include <Adafruit_NeoPixel.h>
-#else
-#include <Adafruit_DotStar.h>
-#endif
-
-#define USE_SERIAL Serial
-
-#ifdef USE_NEOPIXEL
-#define DEVICE_TYPE "Neopixel"
-#else
-#define DEVICE_TYPE "Dotstar"
-#endif
-
-#ifdef DOTSTAR_MATRIX
-#define DEVICE_FORMFACTOR "matrix"
-#else
-#define DEVICE_FORMFACTOR "strip"
-#endif
+#include "Blinky.h"
+#include "BlinkyModes.h"
 
 // We use some magic strings in this constant to ensure that we can easily strip it out of the binary.
 const char BUILD_VERSION[] = ("__Bl!nky__ " __DATE__ " " __TIME__ " " DEVICE_TYPE " " DEVICE_FORMFACTOR " ___");
 
-// Start with this many pixels, but can be reconfigured.
-#define NUMPIXELS 72
-// Maximum number, for the sake of maintaining state.
-#define MAX_PIXELS 350
-#define NEOPIXEL_DATA_PIN 14
-
-#ifdef DOTSTAR_MATRIX
-// Settings for matrix board.
-#define DOTSTAR_DATA_PIN 27
-#define DOTSTAR_CLOCK_PIN 13
-#else
-// Settings for strip with Team Sidney connector PCB.
-#define DOTSTAR_DATA_PIN 14
-#define DOTSTAR_CLOCK_PIN 32
-#endif
-
 #ifdef USE_NEOPIXEL
 Adafruit_NeoPixel *strip = NULL;
-#define DEFAULT_DATA_PIN NEOPIXEL_DATA_PIN
-#define DEFAULT_CLOCK_PIN 0 // Unused.
 #else
 Adafruit_DotStar *strip = NULL;
-#define DEFAULT_DATA_PIN DOTSTAR_DATA_PIN
-#define DEFAULT_CLOCK_PIN DOTSTAR_CLOCK_PIN
 #endif
 
 WiFiMulti wifiMulti;
 HTTPClient http;
 
 StaticJsonDocument<1024> curConfigDocument;
-// Maximum length of mode string.
-#define MAX_MODE_LEN 32
-// Maximum length of firmware version string.
-#define MAX_FIRMWARE_LEN 64
-
-// Describes the current device configuration.
-typedef struct _deviceConfig {
-  char mode[MAX_MODE_LEN];
-  bool enabled;
-  int numPixels, dataPin, clockPin, colorChange, brightness, speed;
-  uint32_t color1, color2;
-  char firmwareVersion[MAX_FIRMWARE_LEN];
-} deviceConfig_t;
 
 deviceConfig_t curConfig = (deviceConfig_t) {
   "test",
@@ -126,7 +72,7 @@ void TaskCheckin(void *);
 void TaskRunConfig(void *);
 
 void makeNewStrip(int numPixels, int dataPin, int clockPin) {
-  USE_SERIAL.printf("Making new strip with %d pixels\n", numPixels);
+  Serial.printf("Making new strip with %d pixels\n", numPixels);
   if (strip != NULL) {
     black();
     delete strip;
@@ -145,8 +91,8 @@ void makeNewStrip(int numPixels, int dataPin, int clockPin) {
 }
 
 void setup() {
-  USE_SERIAL.begin(115200);
-  USE_SERIAL.printf("Starting: %s\n", BUILD_VERSION);
+  Serial.begin(115200);
+  Serial.printf("Starting: %s\n", BUILD_VERSION);
   
   pinMode(LED_BUILTIN, OUTPUT);
 
@@ -161,8 +107,8 @@ void setup() {
 
 #if 0
   for (uint8_t t = 4; t > 0; t--) {
-    USE_SERIAL.printf("[SETUP] WAIT %d...\n", t);
-    USE_SERIAL.flush();
+    Serial.printf("[SETUP] WAIT %d...\n", t);
+    Serial.flush();
     delay(1000);
   }
 #endif
@@ -174,9 +120,9 @@ void setup() {
 }
 
 void printConfig(deviceConfig_t *config) {
-  USE_SERIAL.printf("Config [%lx]:\n", config);
-  USE_SERIAL.printf("  Mode: %s\n", config->mode);
-  USE_SERIAL.printf("  Enabled: %s\n", config->enabled ? "true" : "false"); 
+  Serial.printf("Config [%lx]:\n", config);
+  Serial.printf("  Mode: %s\n", config->mode);
+  Serial.printf("  Enabled: %s\n", config->enabled ? "true" : "false"); 
 }
 
 void flashLed() {
@@ -223,6 +169,7 @@ void black() {
   strip->show();
 }
 
+// Interpolate between color1 and color2. mix represents the amount of color2.
 uint32_t interpolate(uint32_t color1, uint32_t color2, float mix) {
   uint32_t r1 = (color1 & 0xff0000) >> 16;
   uint32_t r2 = (color2 & 0xff0000) >> 16;
@@ -253,12 +200,6 @@ void mixBetween(uint32_t color1, uint32_t color2, int numsteps, uint8_t wait) {
   setAll(color2);
   strip->show();
   delay(wait);
-}
-
-String randomMode() {
-  int index = random(0, NUM_RANDOM_MODES-1);
-  USE_SERIAL.printf("Selecting random mode %d: %s\n", index, RANDOM_MODES[index]);
-  return RANDOM_MODES[index];
 }
 
 void strobe(uint32_t c, int numsteps, uint8_t wait) {
@@ -301,14 +242,14 @@ void rain(uint32_t color, int maxdrops, int wait,
 
   for (int i = 0; i < strip->numPixels(); i++) {
     if (rainState[i].growing) {
-      //USE_SERIAL.printf("Pixel %d is growing and has value %f\n", i, rainState[i].value);
+      //Serial.printf("Pixel %d is growing and has value %f\n", i, rainState[i].value);
       numActive++;
     }
   }
 
   // See if we need to fire up more pixels.
   if (multi) {
-    //USE_SERIAL.printf("numActive: %d\n", numActive);
+    //Serial.printf("numActive: %d\n", numActive);
     if (numActive == 0) {
       // New pixels start all at once
       for (int i = 0; i < maxdrops; i++) {
@@ -369,63 +310,6 @@ void rain(uint32_t color, int maxdrops, int wait,
   delay(wait);
 }
 
-#define MAX_SPLATS 1
-#define MAX_SPLAT_STEPS 20
-struct {
-  int index;
-  int step;
-} splatState[MAX_SPLATS];
-
-void splat(uint32_t color, int wait) {
-  for (int i = 0; i < MAX_SPLATS; i++) {
-    splatState[i].index = -1;
-  }
-  int curSplat = 0;
-  for (int c = 0; c < 100; c++) {
-    if (splatState[curSplat].index == -1) {
-      // Start a new splat.
-      splatState[curSplat].index = random(0, strip->numPixels());
-      splatState[curSplat].step = 0;
-      USE_SERIAL.printf("Adding splat %d at index %d\n", curSplat, splatState[curSplat].index);
-      curSplat++;
-      curSplat = curSplat % MAX_SPLATS; 
-    }
-
-    for (int s = 0; s < MAX_SPLATS; s++) {
-      int index = splatState[s].index;
-      if (index == -1) continue;
-      int st = splatState[s].step;
-      float baseVal;
-      int spread;
-
-      if (st < MAX_SPLAT_STEPS) {
-        baseVal = st / (MAX_SPLAT_STEPS * 1.0);
-      } else if (st < 2*MAX_SPLAT_STEPS) {
-        baseVal = 1.0 - ((st-(2*MAX_SPLAT_STEPS)) / (MAX_SPLAT_STEPS*1.0));
-      } else {
-        baseVal = 0.0;
-      }
-      
-      spread = st;
-      for (int i = 0; i < spread; i++) {
-        //float val = baseVal - (baseVal / spread);
-        float val = baseVal;
-        uint32_t tc = interpolate(0, color, val);
-        setPixel(index + i, tc);
-        setPixel(index - i, tc);
-      } 
-      splatState[s].step++;
-    }
-    strip->show();
-    delay(wait);
-  }
-}
-
-void halloween(uint32_t color1, uint32_t color2, int wait) {
-  strobe(color1, 20, wait);
-  //strobe(color2, 10, wait);
-}
-
 void rainbowCycle(uint8_t wait) {
   uint16_t i, j;
 
@@ -468,68 +352,6 @@ void theaterChaseRainbow(uint8_t wait) {
       for (uint16_t i=0; i < strip->numPixels(); i=i+3) {
         strip->setPixelColor(i+q, 0);        //turn every third pixel off
       }
-    }
-  }
-}
-
-void spackle(uint8_t cycles, uint8_t maxSet, uint8_t wait) {
-  colorWipe(0, 0); // Set to black.
-
-  int setPixels[maxSet];
-  for (int i = 0; i < maxSet; i++) {
-    setPixels[i] = -1;
-  }
-  
-  for (uint16_t i = 0; i < cycles; i++) {
-    if (setPixels[i % maxSet] != -1) {
-      strip->setPixelColor(setPixels[i % maxSet], 0);
-    }
-    int index = random(0, strip->numPixels());
-    uint32_t col = Wheel(random(0, 255));
-    setPixels[i % maxSet] = index;
-    strip->setPixelColor(index, col);
-    strip->show();
-    delay(wait);
-  }
-}
-
-void incrementFire(int index) {
-  if (index < 0) {
-    return;
-  }
-  if (index >= strip->numPixels()) {
-    return;
-  }
-  uint32_t c = strip->getPixelColor(index);
-  if (c >= 0xf00000) {
-    return;
-  }
-  c += 0x100400;
-  strip->setPixelColor(index, c);
-}
-
-void fire(int cycles, int wait) {
-  colorWipe(0, 0); // Set to black.
-
-  //int start = random(0, strip->numPixels());
-  int start = 32+8;
-  strip->setPixelColor(start, 0x100400);
-  strip->show();
-  delay(wait);
-
-  // XXX(mdw) - This is buggy.
-  for (int cycle = 0; cycle < cycles; cycle++) {
-    for (int i = 0; i < strip->numPixels(); i++) {
-      uint32_t cur = strip->getPixelColor(i);
-      if (cur == 0 || cur >= 0xf00000) {
-        continue;
-      }
-      incrementFire(i);
-      incrementFire(i+1);
-      incrementFire(i-1);
-      strip->show();
-      delay(wait);
-      break;
     }
   }
 }
@@ -755,68 +577,6 @@ uint32_t Wheel(byte WheelPos) {
 
 int wheelPos = 0; // Current color changing wheel position.
 
-class PixelMapper {
-public:
-  virtual uint32_t PixelColor(int index) = 0;
-};
-
-class SingleColorMapper : public PixelMapper {
-public:
-  SingleColorMapper(uint32_t c) : _color(c) {}
-  uint32_t PixelColor(int index) { return _color; }
-
-private:
-  uint32_t _color;
-};
-
-class MultiColorMapper : public PixelMapper {
-public:
-  MultiColorMapper(const uint32_t *colors, int numcolors) : _colors(colors), _numcolors(numcolors) {}
-  uint32_t PixelColor(int index) { return _colors[index % _numcolors]; }
-protected:
-  const uint32_t *_colors;
-  int _numcolors;
-};
-
-class RandomColorMapper : public MultiColorMapper {
-public:
-  RandomColorMapper(const uint32_t *colors, int numcolors) : MultiColorMapper(colors, numcolors) {}
-  uint32_t PixelColor(int index) { return _colors[random(0, _numcolors-1)]; }
-};
-
-class Twinkler : public PixelMapper {
-public:
-  Twinkler(PixelMapper *mapper, int stepRange, float minBrightness, float maxBrightness)
-    : _mapper(mapper), _stepRange(stepRange), _minBrightness(minBrightness), _maxBrightness(maxBrightness) {
-    for (int i = 0; i < MAX_PIXELS; i++) {
-      _brightness[i] = minBrightness + ((maxBrightness-minBrightness)/2.0);
-    }
-  }
-
-  uint32_t PixelColor(int index) {
-    uint32_t color = _mapper->PixelColor(index);
-    float b = _brightness[index];
-    float step = random(0, _stepRange) / 100.0;
-    if (random(0, 10) < 5) {
-      b += step;
-    } else {
-      b -= step;
-    }
-    if (b < _minBrightness) b = _minBrightness;
-    if (b > _maxBrightness) b = _maxBrightness;
-    _brightness[index] = b;
-    color = interpolate(0, color, b);
-    return color;
-  }
-
-private:
-  PixelMapper *_mapper;
-  int _stepRange;
-  float _minBrightness;
-  float _maxBrightness;
-  float _brightness[MAX_PIXELS];
-};
-
 struct {
   uint32_t color;
   byte wheelPos;
@@ -912,7 +672,7 @@ void christmasRainbow(int wait) {
 
 // Run the current config.
 void runConfig() {
-  USE_SERIAL.printf("runConfig mode: %s\n", curConfig.mode);
+  Serial.printf("runConfig mode: %s\n", curConfig.mode);
 
   String cMode;
   uint32_t cColor, cColor2;
@@ -928,7 +688,7 @@ void runConfig() {
     xSemaphoreGive(configMutex);
   } else {
     // Can't get mutex to read config, just bail.
-    USE_SERIAL.println("Warning - runConfig() unable to get config mutex.");
+    Serial.println("Warning - runConfig() unable to get config mutex.");
     return;
   }
 
@@ -936,23 +696,6 @@ void runConfig() {
   if (curConfig.numPixels != strip->numPixels()) {
     makeNewStrip(curConfig.numPixels, curConfig.dataPin, curConfig.clockPin);
   }
-
-  if (curConfig.mode == "random") {
-    cMode = randomMode();
-  }
-
-#if 0
-  // XXX MDW HACKING
-  cMode = "twinkle";
-  cEnabled = true;
-  cBrightness = 40;
-  cSpeed = 100;
-  cColor = 0xff5000;
-  cColorChange = 0;
-#endif
-
-  //lightUpSimple(0xff0000, 100);
-  //return;
 
   if (curConfig.colorChange > 0) {
     wheelPos += curConfig.colorChange;
@@ -963,7 +706,7 @@ void runConfig() {
     }
   }
 
-  USE_SERIAL.printf("Running config: %s enabled %s\n",
+  Serial.printf("Running config: %s enabled %s\n",
     curConfig.mode,
     curConfig.enabled ? "true" : "false");
 
@@ -988,12 +731,6 @@ void runConfig() {
     
   } else if (!strcmp(curConfig.mode, "rainbowCycle")) {
     rainbowCycle(curConfig.speed);
-    
-  } else if (!strcmp(curConfig.mode, "spackle")) {
-    spackle(10000, 50, curConfig.speed);
-    
-  } else if (!strcmp(curConfig.mode, "fire")) {
-    fire(1000, curConfig.speed);
     
   } else if (!strcmp(curConfig.mode, "bounce")) {
     bounce(curConfig.color1, curConfig.speed);
@@ -1053,17 +790,17 @@ void runConfig() {
     colorWipe(0, 5);
     
   } else {
-    USE_SERIAL.printf("Unknown mode: %s\n", curConfig.mode);
+    Serial.printf("Unknown mode: %s\n", curConfig.mode);
     black();
     delay(1000);
   }
 }
 
 void checkin() {
-  USE_SERIAL.print("MAC address ");
-  USE_SERIAL.println(WiFi.macAddress());
-  USE_SERIAL.print("IP address is ");
-  USE_SERIAL.println(WiFi.localIP().toString());
+  Serial.print("MAC address ");
+  Serial.println(WiFi.macAddress());
+  Serial.print("IP address is ");
+  Serial.println(WiFi.localIP().toString());
 
   String url = "https://team-sidney.firebaseio.com/checkin/" + WiFi.macAddress() + ".json";
   http.setTimeout(1000);
@@ -1092,49 +829,49 @@ void checkin() {
     xSemaphoreGive(configMutex);
   } else {
     // Can't get lock to serialize current config, just bail out.
-    USE_SERIAL.println("Warning - checkin() unable to get config mutex.");
+    Serial.println("Warning - checkin() unable to get config mutex.");
     return;
   }
   
-  USE_SERIAL.print("[HTTP] PUT " + url + "\n");
-  USE_SERIAL.print(payload + "\n");
+  Serial.print("[HTTP] PUT " + url + "\n");
+  Serial.print(payload + "\n");
   
   int httpCode = http.PUT(payload);
   if (httpCode > 0) {
-    USE_SERIAL.printf("[HTTP] Checkin response code: %d\n", httpCode);
+    Serial.printf("[HTTP] Checkin response code: %d\n", httpCode);
     String payload = http.getString();
-    USE_SERIAL.println(payload);
+    Serial.println(payload);
   } else {
-    USE_SERIAL.printf("[HTTP] failed, error: %s\n", http.errorToString(httpCode).c_str());
+    Serial.printf("[HTTP] failed, error: %s\n", http.errorToString(httpCode).c_str());
   }
   http.end();
 }
 
 void readConfig() {
-  USE_SERIAL.println("readConfig called");
+  Serial.println("readConfig called");
   
   String url = "https://team-sidney.firebaseio.com/strips/" + WiFi.macAddress() + ".json";
   http.setTimeout(10000);
   http.begin(url);
 
-  USE_SERIAL.print("[HTTP] GET " + url + "\n");
+  Serial.print("[HTTP] GET " + url + "\n");
   int httpCode = http.GET();
   if (httpCode <= 0) {
-    USE_SERIAL.printf("[HTTP] failed, error: %s\n", http.errorToString(httpCode).c_str());
+    Serial.printf("[HTTP] failed, error: %s\n", http.errorToString(httpCode).c_str());
     return;
   }
   
   String payload = http.getString();
-  USE_SERIAL.printf("[HTTP] readConfig response code: %d\n", httpCode);
-  USE_SERIAL.println(payload);
+  Serial.printf("[HTTP] readConfig response code: %d\n", httpCode);
+  Serial.println(payload);
 
   bool needsFirmwareUpdate = false;
 
   // Parse JSON config.
   if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
     DeserializationError err = deserializeJson(curConfigDocument, payload);
-    USE_SERIAL.print("Deserialize returned: ");
-    USE_SERIAL.println(err.c_str());
+    Serial.print("Deserialize returned: ");
+    Serial.println(err.c_str());
 
     JsonObject cc = curConfigDocument.as<JsonObject>();
     nextConfig.numPixels = cc["numPixels"];
@@ -1168,7 +905,7 @@ void readConfig() {
     
     xSemaphoreGive(configMutex);
   } else {
-    USE_SERIAL.println("Warning - readConfig() unable to get config mutex");
+    Serial.println("Warning - readConfig() unable to get config mutex");
   }
   http.end();
 
@@ -1199,27 +936,27 @@ void TaskRunConfig(void *pvParameters) {
 }
 
 void readFirmwareMetadata(String firmwareVersion) {
-  USE_SERIAL.println("readFirmwareMetadata called");
+  Serial.println("readFirmwareMetadata called");
   
   String url = "https://team-sidney.firebaseio.com/firmware/" + firmwareVersion + ".json";
   http.setTimeout(1000);
   http.begin(url);
 
-  USE_SERIAL.print("[HTTP] GET " + url + "\n");
+  Serial.print("[HTTP] GET " + url + "\n");
   int httpCode = http.GET();
   if (httpCode <= 0) {
-    USE_SERIAL.printf("[HTTP] failed, error: %s\n", http.errorToString(httpCode).c_str());
+    Serial.printf("[HTTP] failed, error: %s\n", http.errorToString(httpCode).c_str());
     return;
   }
   
   String payload = http.getString();
-  USE_SERIAL.printf("[HTTP] readFirmwareMetadata response code: %d\n", httpCode);
-  USE_SERIAL.println(payload);
+  Serial.printf("[HTTP] readFirmwareMetadata response code: %d\n", httpCode);
+  Serial.println(payload);
 
   // Parse JSON config.
   DeserializationError err = deserializeJson(firmwareVersionDocument, payload);
-  USE_SERIAL.print("Deserialize returned: ");
-  USE_SERIAL.println(err.c_str());
+  Serial.print("Deserialize returned: ");
+  Serial.println(err.c_str());
 
   JsonObject fwdoc = firmwareVersionDocument.as<JsonObject>();
   firmwareUrl = (const String &)fwdoc["url"];
@@ -1235,60 +972,60 @@ void updateFirmware() {
     newVersion = curConfig.firmwareVersion;
     xSemaphoreGive(configMutex);
   } else {
-    USE_SERIAL.println("Warning - updateFirmware() unable to get config mutex");
+    Serial.println("Warning - updateFirmware() unable to get config mutex");
     return;
   }
   
-  USE_SERIAL.printf("Current firmware version: %s\n", BUILD_VERSION);
-  USE_SERIAL.println("Desired firmware version: " + newVersion);
+  Serial.printf("Current firmware version: %s\n", BUILD_VERSION);
+  Serial.println("Desired firmware version: " + newVersion);
 
   readFirmwareMetadata(newVersion);
-  USE_SERIAL.println("Read firmware metadata, URL is " + firmwareUrl);
-  USE_SERIAL.println("Hash " + firmwareHash);
+  Serial.println("Read firmware metadata, URL is " + firmwareUrl);
+  Serial.println("Hash " + firmwareHash);
 
-  USE_SERIAL.println("Starting OTA...");
+  Serial.println("Starting OTA...");
   http.begin(firmwareUrl);
 
-  USE_SERIAL.print("[HTTP] GET " + firmwareUrl + "\n");
+  Serial.print("[HTTP] GET " + firmwareUrl + "\n");
   int httpCode = http.GET();
   if (httpCode <= 0) {
-    USE_SERIAL.printf("[HTTP] failed, error: %s\n", http.errorToString(httpCode).c_str());
+    Serial.printf("[HTTP] failed, error: %s\n", http.errorToString(httpCode).c_str());
     return;
   }
 
   int contentLen = http.getSize();
-  USE_SERIAL.printf("Content-Length: %d\n", contentLen);
+  Serial.printf("Content-Length: %d\n", contentLen);
   bool canBegin = Update.begin(contentLen);
   if (canBegin) {
-    USE_SERIAL.println("OK to start OTA.");
+    Serial.println("OK to start OTA.");
   } else {
-    USE_SERIAL.println("Not enough space to begin OTA");
+    Serial.println("Not enough space to begin OTA");
     return;
   }
 
   WiFiClient* client = http.getStreamPtr();
   size_t written = Update.writeStream(*client);
-  USE_SERIAL.printf("OTA: %d/%d bytes written.\n", written, contentLen);
+  Serial.printf("OTA: %d/%d bytes written.\n", written, contentLen);
   if (written != contentLen) {
-    USE_SERIAL.println("Wrote partial binary. Giving up.");
+    Serial.println("Wrote partial binary. Giving up.");
     return;
   }
 
   if (Update.end()) {
-    USE_SERIAL.println("OTA done!");
+    Serial.println("OTA done!");
   } else {
-    USE_SERIAL.println("Error from Update.end(): " + String(Update.getError()));
+    Serial.println("Error from Update.end(): " + String(Update.getError()));
     return;
   }
   
   String md5 = Update.md5String();
-  USE_SERIAL.println("MD5: " + md5);
+  Serial.println("MD5: " + md5);
   
   if (Update.isFinished()) {
-    USE_SERIAL.println("Update successfully completed. Rebooting.");
+    Serial.println("Update successfully completed. Rebooting.");
     ESP.restart();
   } else {
-    USE_SERIAL.println("Error from Update.isFinished(): " + String(Update.getError()));
+    Serial.println("Error from Update.isFinished(): " + String(Update.getError()));
     return;
   }
 }
