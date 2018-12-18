@@ -10,8 +10,13 @@
 #include <ArduinoJson.h>
 #include <freertos/task.h>
 #include <Update.h>
+#include <WiFi.h>
+#include <WiFiMulti.h>
+#include <HTTPClient.h>
 
+// Define the below to use Neopixels instead of DotStars.
 //#define USE_NEOPIXEL
+// Define the below to use a Dotstar matrix instead of a strip.
 #define DOTSTAR_MATRIX
 
 #ifdef USE_NEOPIXEL
@@ -19,10 +24,6 @@
 #else
 #include <Adafruit_DotStar.h>
 #endif
-
-#include <WiFi.h>
-#include <WiFiMulti.h>
-#include <HTTPClient.h>
 
 #define USE_SERIAL Serial
 
@@ -71,21 +72,37 @@ WiFiMulti wifiMulti;
 HTTPClient http;
 
 StaticJsonDocument<1024> curConfigDocument;
-// Maximum length of configMode string.
-#define MAX_MODE_LEN 16
+// Maximum length of mode string.
+#define MAX_MODE_LEN 32
+// Maximum length of firmware version string.
+#define MAX_FIRMWARE_LEN 64
 
-// Copy of the current configuration.
-String configMode = "test";
-bool configEnabled = true;
-int configNumPixels = NUMPIXELS;
-int configDataPin = DEFAULT_DATA_PIN;
-int configClockPin = DEFAULT_CLOCK_PIN;
-int configColorChange = 0;
-int configBrightness = 100;
-int configSpeed = 100;
-uint32_t configColor = 0;
-uint32_t configColor2 = 0;
-String configFirmwareVersion = "";
+// Describes the current device configuration.
+typedef struct _deviceConfig {
+  char mode[MAX_MODE_LEN];
+  bool enabled;
+  int numPixels, dataPin, clockPin, colorChange, brightness, speed;
+  uint32_t color1, color2;
+  char firmwareVersion[MAX_FIRMWARE_LEN];
+} deviceConfig_t;
+
+deviceConfig_t curConfig = (deviceConfig_t) {
+  "test",
+  true,
+  NUMPIXELS,
+  DEFAULT_DATA_PIN,
+  DEFAULT_CLOCK_PIN,
+  0,   // Color change.
+  100, // Brightness.
+  100, // Speed.
+  0,   // Color1.
+  0,   // Color2.
+  ""   // Firmware.
+};
+deviceConfig_t nextConfig;
+
+// Used to protect access to curConfig / nextConfig.
+SemaphoreHandle_t configMutex = NULL;
 
 // Next firmware URL and hash, for OTA update.
 StaticJsonDocument<512> firmwareVersionDocument;
@@ -104,9 +121,7 @@ const String RANDOM_MODES[] = {
   "comet",
 };
 
-
-SemaphoreHandle_t configMutex = NULL;
-void TaskFlash(void *);
+// Concurrent tasks.
 void TaskCheckin(void *);
 void TaskRunConfig(void *);
 
@@ -130,18 +145,20 @@ void makeNewStrip(int numPixels, int dataPin, int clockPin) {
 }
 
 void setup() {
-  configMode.reserve(32);
-  configFirmwareVersion.reserve(128);
+  USE_SERIAL.begin(115200);
+  USE_SERIAL.printf("Starting: %s\n", BUILD_VERSION);
+  
   pinMode(LED_BUILTIN, OUTPUT);
+
+  memcpy(&nextConfig, &curConfig, sizeof(nextConfig));
+  printConfig(&curConfig);
+  printConfig(&nextConfig);
 
   makeNewStrip(NUMPIXELS, DEFAULT_DATA_PIN, DEFAULT_CLOCK_PIN);
   initRain();
   initPhantoms();
   initLightUp();
   
-  USE_SERIAL.begin(115200);
-  USE_SERIAL.printf("Starting: %s\n", BUILD_VERSION);
-
   for (uint8_t t = 4; t > 0; t--) {
     USE_SERIAL.printf("[SETUP] WAIT %d...\n", t);
     USE_SERIAL.flush();
@@ -152,6 +169,12 @@ void setup() {
   configMutex = xSemaphoreCreateMutex();
   xTaskCreate(TaskCheckin, (const char *)"Checkin", 1024*40, NULL, 2, NULL);
   xTaskCreate(TaskRunConfig, (const char *)"Run config", 1024*40, NULL, 8, NULL);
+}
+
+void printConfig(deviceConfig_t *config) {
+  USE_SERIAL.printf("Config [%lx]:\n", config);
+  USE_SERIAL.printf("  Mode: %s\n", config->mode);
+  USE_SERIAL.printf("  Enabled: %s\n", config->enabled ? "true" : "false"); 
 }
 
 void flashLed() {
@@ -887,7 +910,7 @@ void christmasRainbow(int wait) {
 
 // Run the current config.
 void runConfig() {
-  USE_SERIAL.println("runConfig mode: " + configMode);
+  USE_SERIAL.printf("runConfig mode: %s\n", curConfig.mode);
 
   String cMode;
   uint32_t cColor, cColor2;
@@ -896,16 +919,10 @@ void runConfig() {
 
   // Read local copy of config to avoid holding mutex for too long.
   if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
-    cEnabled = configEnabled;
-    cMode = configMode;
-    cColor = configColor;
-    cColor2 = configColor2;
-    cColorChange = configColorChange;
-    cBrightness = configBrightness;
-    cSpeed = configSpeed;
-    cNumPixels = configNumPixels;
-    cDataPin = configDataPin;
-    cClockPin = configClockPin;
+    if (memcmp(&curConfig, &nextConfig, sizeof(curConfig))) {
+      // Config has changed.
+      memcpy(&curConfig, &nextConfig, sizeof(nextConfig));
+    }
     xSemaphoreGive(configMutex);
   } else {
     // Can't get mutex to read config, just bail.
@@ -914,11 +931,11 @@ void runConfig() {
   }
 
   // If we have a new config for the number of pixels, reset the strip.
-  if (cNumPixels != strip->numPixels()) {
-    makeNewStrip(configNumPixels, cDataPin, cClockPin);
+  if (curConfig.numPixels != strip->numPixels()) {
+    makeNewStrip(curConfig.numPixels, curConfig.dataPin, curConfig.clockPin);
   }
 
-  if (cMode == "random") {
+  if (curConfig.mode == "random") {
     cMode = randomMode();
   }
 
@@ -935,91 +952,78 @@ void runConfig() {
   lightUpSimple(0xff0000, 100);
   return;
 
-  if (cColorChange > 0) {
-    wheelPos += cColorChange;
+  if (curConfig.colorChange > 0) {
+    wheelPos += curConfig.colorChange;
     wheelPos = wheelPos % 255;
-    cColor = Wheel(wheelPos);
-    if (cColor2 != 0) {
-      cColor2 = Wheel((wheelPos + 128) % 255);
+    curConfig.color1 = Wheel(wheelPos);
+    if (curConfig.color2 != 0) {
+      curConfig.color2 = Wheel((wheelPos + 128) % 255);
     }
   }
 
-  USE_SERIAL.println("Running config: " + cMode + " enabled " + cEnabled);
+  USE_SERIAL.printf("Running config: %s enabled %s\n", curConfig.mode, curConfig.enabled);
 
-  if (cMode == "none" || cMode == "off" || !cEnabled) {
+  strip->setBrightness(curConfig.brightness);
+
+  if (curConfig.mode == "none" || curConfig.mode == "off" || !curConfig.enabled) {
     black();
     delay(1000);
 
-  } else if (cMode == "wipe") {
-    strip->setBrightness(cBrightness);
-    colorWipe(cColor, cSpeed);
-    colorWipe(0, cSpeed);
+  } else if (curConfig.mode == "wipe") {
+    colorWipe(curConfig.color1, curConfig.speed);
+    colorWipe(0, curConfig.speed);
     
-  } else if (cMode == "theater") {
-    strip->setBrightness(cBrightness);
-    theaterChase(cColor, cSpeed);
+  } else if (curConfig.mode == "theater") {
+    theaterChase(curConfig.color1, curConfig.speed);
     
-  } else if (cMode == "rainbow") {
-    strip->setBrightness(cBrightness);
-    rainbow(cSpeed);
+  } else if (curConfig.mode == "rainbow") {
+    strip->setBrightness(curConfig.brightness);
+    rainbow(curConfig.speed);
     
-  } else if (cMode == "rainbowCycle") {
-    strip->setBrightness(cBrightness);
-    rainbowCycle(cSpeed);
+  } else if (curConfig.mode == "rainbowCycle") {
+    rainbowCycle(curConfig.speed);
     
-  } else if (cMode == "spackle") {
-    strip->setBrightness(cBrightness);
-    spackle(10000, 50, cSpeed);
+  } else if (curConfig.mode == "spackle") {
+    spackle(10000, 50, curConfig.speed);
     
-  } else if (cMode == "fire") {
-    strip->setBrightness(cBrightness);
-    fire(1000, cSpeed);
+  } else if (curConfig.mode == "fire") {
+    fire(1000, curConfig.speed);
     
-  } else if (cMode == "bounce") {
-    strip->setBrightness(cBrightness);
-    bounce(cColor, cSpeed);
+  } else if (curConfig.mode == "bounce") {
+    bounce(curConfig.color1, curConfig.speed);
     
-  } else if (cMode == "strobe") {
-    strip->setBrightness(cBrightness);
-    strobe(cColor, 10, cSpeed);
-    if (cColor2 != 0) {
-      strobe(cColor2, 10, cSpeed);
+  } else if (curConfig.mode == "strobe") {
+    strobe(curConfig.color1, 10, curConfig.speed);
+    if (curConfig.color2 != 0) {
+      strobe(curConfig.color2, 10, curConfig.speed);
     }
 
-  } else if (cMode == "rain") {
-    strip->setBrightness(cBrightness);
-    rain(cColor, strip->numPixels(), cSpeed, 1.0, 1.0, 0.0, 0.05, 0.05, false, false);
+  } else if (curConfig.mode == "rain") {
+    rain(curConfig.color1, strip->numPixels(), curConfig.speed, 1.0, 1.0, 0.0, 0.05, 0.05, false, false);
 
-  } else if (cMode == "snow") {
-    strip->setBrightness(cBrightness);
-    rain(cColor, strip->numPixels(), cSpeed, 0.02, 1.0, 0.0, 0.01, 0.2, false, false);
+  } else if (curConfig.mode == "snow") {
+    rain(curConfig.color1, strip->numPixels(), curConfig.speed, 0.02, 1.0, 0.0, 0.01, 0.2, false, false);
 
-  } else if (cMode == "sparkle") {
-    strip->setBrightness(cBrightness);
-    rain(cColor, strip->numPixels(), cSpeed, 1.0, 1.0, 0.0, 0, 0.4, false, false);
+  } else if (curConfig.mode == "sparkle") {
+    rain(curConfig.color1, strip->numPixels(), curConfig.speed, 1.0, 1.0, 0.0, 0, 0.4, false, false);
 
-  } else if (cMode == "shimmer") {
-    strip->setBrightness(cBrightness);
-    rain(cColor, 10, cSpeed, 0.1, 1.0, 0.0, 0.2, 0.05, true, false);
+  } else if (curConfig.mode == "shimmer") {
+    rain(curConfig.color1, 10, curConfig.speed, 0.1, 1.0, 0.0, 0.2, 0.05, true, false);
 
-  } else if (cMode == "twinkle") {
-    strip->setBrightness(cBrightness);
-    rain(cColor, strip->numPixels(), cSpeed, 0.2, 0.8, 0.0, 0.1, 0.05, false, true);
+  } else if (curConfig.mode == "twinkle") {
+    rain(curConfig.color1, strip->numPixels(), curConfig.speed, 0.2, 0.8, 0.0, 0.1, 0.05, false, true);
 
-  } else if (cMode == "comet") {
-    strip->setBrightness(cBrightness);
-    comet(cColor, 100, cSpeed);
+  } else if (curConfig.mode == "comet") {
+    comet(curConfig.color1, 100, curConfig.speed);
 
-  } else if (cMode == "candle") {
-    strip->setBrightness(cBrightness);
-    candle(cSpeed);
+  } else if (curConfig.mode == "candle") {
+    candle(curConfig.speed);
 
-  } else if (cMode == "flicker") {
-    flicker(cColor, cBrightness, cSpeed);
+  } else if (curConfig.mode == "flicker") {
+    flicker(curConfig.color1, curConfig.brightness, curConfig.speed);
 
-  } else if (cMode == "phantom") {
-    strip->setBrightness(cBrightness);
-    phantom(cColor, 5, 10, cSpeed);
+  } else if (curConfig.mode == "phantom") {
+    phantom(curConfig.color1, 5, 10, curConfig.speed);
 
 #if 0
   } else if (cMode == "christmas") {
@@ -1039,7 +1043,7 @@ void runConfig() {
     christmasRainbow(cSpeed);
 #endif
 
-  } else if (cMode == "test") {
+  } else if (curConfig.mode == "test") {
     strip->setBrightness(50);
     colorWipe(0xff0000, 5);
     colorWipe(0x00ff00, 5);
@@ -1131,33 +1135,32 @@ void readConfig() {
     USE_SERIAL.println(err.c_str());
 
     JsonObject cc = curConfigDocument.as<JsonObject>();
-    configNumPixels = cc["numPixels"];
-    if (configNumPixels == 0) {
-      configNumPixels = NUMPIXELS;
+    nextConfig.numPixels = cc["numPixels"];
+    if (nextConfig.numPixels == 0) {
+      nextConfig.numPixels = NUMPIXELS;
     }
-    configDataPin = cc["dataPin"];
-    if (configDataPin == 0) {
-      configDataPin = DEFAULT_DATA_PIN;
+    nextConfig.dataPin = cc["dataPin"];
+    if (nextConfig.dataPin == 0) {
+      nextConfig.dataPin = DEFAULT_DATA_PIN;
     }
-    configClockPin = cc["clockPin"];
-    if (configClockPin == 0) {
-      configClockPin = DEFAULT_CLOCK_PIN;
+    nextConfig.clockPin = cc["clockPin"];
+    if (nextConfig.clockPin == 0) {
+      nextConfig.clockPin = DEFAULT_CLOCK_PIN;
     }
-    configMode = (const String &)cc["mode"];
-    configEnabled = (cc["enabled"] == true);
-    configSpeed = cc["speed"];
-    configBrightness = cc["brightness"];
-    configColorChange = cc["colorChange"];
-    configColor = strip->Color(cc["red"], cc["green"], cc["blue"]);
-    configColor2 = strip->Color(cc["red2"], cc["green2"], cc["blue2"]);
-    USE_SERIAL.printf("color1 %x color2 %x\n", configColor, configColor2);
-    configFirmwareVersion = (const String &)cc["version"];
+    memcpy(nextConfig.mode, (const char *)cc["mode"], sizeof(nextConfig.mode));
+    nextConfig.enabled = (cc["enabled"] == true);
+    nextConfig.speed = cc["speed"];
+    nextConfig.brightness = cc["brightness"];
+    nextConfig.colorChange = cc["colorChange"];
+    nextConfig.color1 = strip->Color(cc["red"], cc["green"], cc["blue"]);
+    nextConfig.color2 = strip->Color(cc["red2"], cc["green2"], cc["blue2"]);
+    memcpy(nextConfig.firmwareVersion, (const char *)cc["version"], sizeof(nextConfig.firmwareVersion));
 
     // If the firmware version needs to be updated, kick off the update.
-    if (configFirmwareVersion != BUILD_VERSION &&
-        configFirmwareVersion != "none" &&
-        configFirmwareVersion != "" &&
-        configFirmwareVersion != "current") {
+    if (nextConfig.firmwareVersion != BUILD_VERSION &&
+        nextConfig.firmwareVersion != "none" &&
+        nextConfig.firmwareVersion != "" &&
+        nextConfig.firmwareVersion != "current") {
       needsFirmwareUpdate = true;
     }
     
@@ -1170,7 +1173,6 @@ void readConfig() {
   if (needsFirmwareUpdate) {
     updateFirmware();
   }
-
 }
 
 /* Task to periodically checkin and read new config. */
@@ -1228,7 +1230,7 @@ void updateFirmware() {
   String newVersion;
   
   if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
-    newVersion = configFirmwareVersion;
+    newVersion = curConfig.firmwareVersion;
     xSemaphoreGive(configMutex);
   } else {
     USE_SERIAL.println("Warning - updateFirmware() unable to get config mutex");

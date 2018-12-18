@@ -44,18 +44,20 @@ void circle(EscherStepper &e, float radius) {
   e.push(floor(radius * sin(0.0)), floor(radius * cos(0.0)));
 }
 
+int curPoint = 0;
+
 void setup() {  
   Serial.begin(115200);
   Serial.printf("Starting\n");
   AFMS.begin(); // Start the bottom shield
-  for (int i = 0; i < GCODE_NUM_POINTS; i++) {
-    escher.push(_GCODE_POINTS[i].first, _GCODE_POINTS[i].second);
-  }
-  //escher.home();
+  escher.push(_GCODE_POINTS[0].first, _GCODE_POINTS[0].second);
 }
 
 void loop() {
   if (!escher.run()) {
-    // Do nothing.
+    curPoint++;
+    if (curPoint < GCODE_NUM_POINTS) {
+      escher.push(_GCODE_POINTS[curPoint].first, _GCODE_POINTS[curPoint].second);
+    }
   }
 }

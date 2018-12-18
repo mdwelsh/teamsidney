@@ -15,7 +15,7 @@ def atan3(dy, dx):
 
 # Adapted from:
 # https://www.marginallyclever.com/2014/03/how-to-improve-the-2-axis-cnc-gcode-interpreter-to-understand-arcs/
-def doArc(posx, posy, x, y, cx, cy, cw, CM_PER_SEGMENT=0.01): 
+def doArc(posx, posy, x, y, cx, cy, cw, CM_PER_SEGMENT=0.1): 
   retval = []
   print >> sys.stderr, '\nArc from (%f, %f) to (%f, %f) center (%f, %f) cw %s' % (posx, posy, x, y, cx, cy, cw)
   dx = posx - cx 
@@ -59,7 +59,7 @@ def doArc(posx, posy, x, y, cx, cy, cw, CM_PER_SEGMENT=0.01):
 
 
 def parseGcode(input):
-  waypoints = []
+  waypoints = [(0.0, 0.0)]
 
   for line in input:
     m = re.match('(G0[01]) X([\d\.]+) Y([\d\.]+)', line)
@@ -92,9 +92,10 @@ def parseGcode(input):
 
   return waypoints
 
+# Map from gcode coordinates to step coordinates.
 def stepFn(val):
   x, y = val
-  return (int(x * 10), int(y * 10))
+  return (int(x * 4.), int(y * 4.))
 
 def waypointsToSteps(waypoints):
   return map(stepFn, waypoints)
@@ -103,7 +104,7 @@ waypoints = parseGcode(fileinput.input())
 positions = waypointsToSteps(waypoints)
 
 print '#define GCODE_NUM_POINTS %d' % len(positions)
-print 'std::pair<int, int> _GCODE_POINTS[%d] = {' % len(positions)
+print 'const std::pair<int, int> _GCODE_POINTS[%d] = {' % len(positions)
 for (x, y) in positions:
   print '  { std::make_pair(%d, %d) },' % (x, y)
 print '};'

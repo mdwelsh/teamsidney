@@ -5,7 +5,7 @@
 #include <AccelStepper.h>
 #include <Adafruit_MotorShield.h>
 
-#define MAX_SPEED 100.0
+#define MAX_SPEED 500.0
 #define ACCELERATION 500.0
 
 EscherStepper::EscherStepper(AccelStepper& xstepper, AccelStepper& ystepper) :
