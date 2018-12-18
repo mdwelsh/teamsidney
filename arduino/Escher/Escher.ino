@@ -4,6 +4,7 @@
 #include <AccelStepper.h>
 #include <Adafruit_MotorShield.h>
 #include "EscherStepper.h"
+#include "gcode.h"
 
 Adafruit_MotorShield AFMS = Adafruit_MotorShield();
 Adafruit_StepperMotor *myStepper1 = AFMS.getStepper(200, 1);
@@ -47,13 +48,14 @@ void setup() {
   Serial.begin(115200);
   Serial.printf("Starting\n");
   AFMS.begin(); // Start the bottom shield
+  for (int i = 0; i < GCODE_NUM_POINTS; i++) {
+    escher.push(_GCODE_POINTS[i].first, _GCODE_POINTS[i].second);
+  }
   //escher.home();
 }
 
 void loop() {
   if (!escher.run()) {
-    //circle(escher, 200);
-    escher.push(200, 200);
-    escher.push(-200, -200);
+    // Do nothing.
   }
 }
