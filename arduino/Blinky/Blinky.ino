@@ -158,12 +158,14 @@ void setup() {
   initRain();
   initPhantoms();
   initLightUp();
-  
+
+#if 0
   for (uint8_t t = 4; t > 0; t--) {
     USE_SERIAL.printf("[SETUP] WAIT %d...\n", t);
     USE_SERIAL.flush();
     delay(1000);
   }
+#endif
   wifiMulti.addAP("theonet_EXT", "juneaudog");
   
   configMutex = xSemaphoreCreateMutex();
@@ -949,8 +951,8 @@ void runConfig() {
   cColorChange = 0;
 #endif
 
-  lightUpSimple(0xff0000, 100);
-  return;
+  //lightUpSimple(0xff0000, 100);
+  //return;
 
   if (curConfig.colorChange > 0) {
     wheelPos += curConfig.colorChange;
@@ -961,89 +963,89 @@ void runConfig() {
     }
   }
 
-  USE_SERIAL.printf("Running config: %s enabled %s\n", curConfig.mode, curConfig.enabled);
+  USE_SERIAL.printf("Running config: %s enabled %s\n",
+    curConfig.mode,
+    curConfig.enabled ? "true" : "false");
 
   strip->setBrightness(curConfig.brightness);
 
-  if (curConfig.mode == "none" || curConfig.mode == "off" || !curConfig.enabled) {
+  if (!strcmp(curConfig.mode, "none") ||
+      !strcmp(curConfig.mode, "off") ||
+      !curConfig.enabled) {
     black();
     delay(1000);
 
-  } else if (curConfig.mode == "wipe") {
+  } else if (!strcmp(curConfig.mode, "wipe")) {
     colorWipe(curConfig.color1, curConfig.speed);
     colorWipe(0, curConfig.speed);
     
-  } else if (curConfig.mode == "theater") {
+  } else if (!strcmp(curConfig.mode, "theater")) {
     theaterChase(curConfig.color1, curConfig.speed);
     
-  } else if (curConfig.mode == "rainbow") {
+  } else if (!strcmp(curConfig.mode, "rainbow")) {
     strip->setBrightness(curConfig.brightness);
     rainbow(curConfig.speed);
     
-  } else if (curConfig.mode == "rainbowCycle") {
+  } else if (!strcmp(curConfig.mode, "rainbowCycle")) {
     rainbowCycle(curConfig.speed);
     
-  } else if (curConfig.mode == "spackle") {
+  } else if (!strcmp(curConfig.mode, "spackle")) {
     spackle(10000, 50, curConfig.speed);
     
-  } else if (curConfig.mode == "fire") {
+  } else if (!strcmp(curConfig.mode, "fire")) {
     fire(1000, curConfig.speed);
     
-  } else if (curConfig.mode == "bounce") {
+  } else if (!strcmp(curConfig.mode, "bounce")) {
     bounce(curConfig.color1, curConfig.speed);
     
-  } else if (curConfig.mode == "strobe") {
+  } else if (!strcmp(curConfig.mode, "strobe")) {
     strobe(curConfig.color1, 10, curConfig.speed);
     if (curConfig.color2 != 0) {
       strobe(curConfig.color2, 10, curConfig.speed);
     }
 
-  } else if (curConfig.mode == "rain") {
+  } else if (!strcmp(curConfig.mode, "rain")) {
     rain(curConfig.color1, strip->numPixels(), curConfig.speed, 1.0, 1.0, 0.0, 0.05, 0.05, false, false);
 
-  } else if (curConfig.mode == "snow") {
+  } else if (!strcmp(curConfig.mode, "snow")) {
     rain(curConfig.color1, strip->numPixels(), curConfig.speed, 0.02, 1.0, 0.0, 0.01, 0.2, false, false);
 
-  } else if (curConfig.mode == "sparkle") {
+  } else if (!strcmp(curConfig.mode, "sparkle")) {
     rain(curConfig.color1, strip->numPixels(), curConfig.speed, 1.0, 1.0, 0.0, 0, 0.4, false, false);
 
-  } else if (curConfig.mode == "shimmer") {
+  } else if (!strcmp(curConfig.mode, "shimmer")) {
     rain(curConfig.color1, 10, curConfig.speed, 0.1, 1.0, 0.0, 0.2, 0.05, true, false);
 
-  } else if (curConfig.mode == "twinkle") {
+  } else if (!strcmp(curConfig.mode, "twinkle")) {
     rain(curConfig.color1, strip->numPixels(), curConfig.speed, 0.2, 0.8, 0.0, 0.1, 0.05, false, true);
 
-  } else if (curConfig.mode == "comet") {
+  } else if (!strcmp(curConfig.mode, "comet")) {
     comet(curConfig.color1, 100, curConfig.speed);
 
-  } else if (curConfig.mode == "candle") {
+  } else if (!strcmp(curConfig.mode, "candle")) {
     candle(curConfig.speed);
 
-  } else if (curConfig.mode == "flicker") {
+  } else if (!strcmp(curConfig.mode, "flicker")) {
     flicker(curConfig.color1, curConfig.brightness, curConfig.speed);
 
-  } else if (curConfig.mode == "phantom") {
+  } else if (!strcmp(curConfig.mode, "phantom")) {
     phantom(curConfig.color1, 5, 10, curConfig.speed);
 
 #if 0
-  } else if (cMode == "christmas") {
-    strip->setBrightness(cBrightness);
-    christmas(cSpeed, false, true);
+  } else if (!strcmp(curConfig.mode), "christmas")) {
+    christmas(curConfig.speed, false, true);
 
-  } else if (cMode == "christmasBoring") {
-    strip->setBrightness(cBrightness);
-    christmas(cSpeed, false, false);
+  } else if (!strcmp(curConfig.mode), "christmasBoring")) {
+    christmas(curConfig.speed, false, false);
 
-  } else if (cMode == "christmasRandom") {
-    strip->setBrightness(cBrightness);
-    christmas(cSpeed, true, true);
+  } else if (!strcmp(curConfig.mode), "christmasRandom")) {
+    christmas(curConfig.speed, true, true);
 
-  } else if (cMode == "christmasRainbow") {
-    strip->setBrightness(cBrightness);
-    christmasRainbow(cSpeed);
+  } else if (!strcmp(curConfig.mode), "christmasRainbow")) {
+    christmasRainbow(curConfig.speed);
 #endif
 
-  } else if (curConfig.mode == "test") {
+  } else if (!strcmp(curConfig.mode, "test")) {
     strip->setBrightness(50);
     colorWipe(0xff0000, 5);
     colorWipe(0x00ff00, 5);
@@ -1051,7 +1053,7 @@ void runConfig() {
     colorWipe(0, 5);
     
   } else {
-    USE_SERIAL.println("Unknown mode: " + cMode);
+    USE_SERIAL.printf("Unknown mode: %s\n", curConfig.mode);
     black();
     delay(1000);
   }
