@@ -14,7 +14,11 @@
 class PixelMapper {
 public:
   virtual uint32_t PixelColor(int index) = 0;
+  static PixelMapper* Create(const& deviceConfig_t);
+  void run();
 };
+
+PixelMapper* pixelMapperFactory(deviceConfig_t *config);
 
 class SingleColorMapper : public PixelMapper {
 public:

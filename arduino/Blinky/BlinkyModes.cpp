@@ -15,3 +15,7 @@ uint32_t Twinkler::PixelColor(int index) {
   color = interpolate(0, color, b);
   return color;
 }
+
+PixelMapper* PixelMapper::Create(const deviceConfig_t &config) {
+  // XXX MDW Implement this.
+}

@@ -47,6 +47,8 @@ deviceConfig_t curConfig = (deviceConfig_t) {
 };
 deviceConfig_t nextConfig;
 
+PixelMapper *curMapper = NULL;
+
 // Used to protect access to curConfig / nextConfig.
 SemaphoreHandle_t configMutex = NULL;
 
@@ -674,16 +676,12 @@ void christmasRainbow(int wait) {
 void runConfig() {
   Serial.printf("runConfig mode: %s\n", curConfig.mode);
 
-  String cMode;
-  uint32_t cColor, cColor2;
-  int cColorChange, cBrightness, cSpeed, cNumPixels, cDataPin, cClockPin;
-  bool cEnabled;
-
-  // Read local copy of config to avoid holding mutex for too long.
+  bool configChanged = false;
   if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
     if (memcmp(&curConfig, &nextConfig, sizeof(curConfig))) {
       // Config has changed.
       memcpy(&curConfig, &nextConfig, sizeof(nextConfig));
+      configChanged = true;
     }
     xSemaphoreGive(configMutex);
   } else {
@@ -696,6 +694,16 @@ void runConfig() {
   if (curConfig.numPixels != strip->numPixels()) {
     makeNewStrip(curConfig.numPixels, curConfig.dataPin, curConfig.clockPin);
   }
+
+  if (configChanged) {
+    delete curMapper;
+    curMapper = pixelMapperFactory(&curConfig);
+  }
+
+  curMapper->run();
+}
+
+#if 0 // XXX XXX XXX MDW - Need to refactor the below:
 
   if (curConfig.colorChange > 0) {
     wheelPos += curConfig.colorChange;
@@ -768,7 +776,7 @@ void runConfig() {
   } else if (!strcmp(curConfig.mode, "phantom")) {
     phantom(curConfig.color1, 5, 10, curConfig.speed);
 
-#if 0
+/*
   } else if (!strcmp(curConfig.mode), "christmas")) {
     christmas(curConfig.speed, false, true);
 
@@ -780,7 +788,7 @@ void runConfig() {
 
   } else if (!strcmp(curConfig.mode), "christmasRainbow")) {
     christmasRainbow(curConfig.speed);
-#endif
+*/
 
   } else if (!strcmp(curConfig.mode, "test")) {
     strip->setBrightness(50);
@@ -795,6 +803,7 @@ void runConfig() {
     delay(1000);
   }
 }
+#endif
 
 void checkin() {
   Serial.print("MAC address ");
