@@ -5,16 +5,14 @@
 #include <AccelStepper.h>
 #include <Adafruit_MotorShield.h>
 
-#define MAX_SPEED 500.0
+#define MAX_SPEED 50.0
 
 EscherStepper::EscherStepper(AccelStepper& xstepper, AccelStepper& ystepper) :
   _xstepper(xstepper), _ystepper(ystepper), _stopped(true) {
-    /*
   _xstepper.setMaxSpeed(MAX_SPEED);
-  _xstepper.setAcceleration(ACCELERATION);
+  //_xstepper.setAcceleration(ACCELERATION);
   _ystepper.setMaxSpeed(MAX_SPEED);
-  _ystepper.setAcceleration(ACCELERATION);
-  */
+  //_ystepper.setAcceleration(ACCELERATION);
 }
 
 void EscherStepper::clear() {
@@ -93,7 +91,6 @@ bool EscherStepper::run() {
       _xstepper.setSpeed(xspeed);
       _ystepper.setSpeed(yspeed);
     } else {
-      Serial.printf("Nothing to do, stopping.\n");
       // Nothing to do.
       _stopped = true;
       _xstepper.setSpeed(0);
@@ -105,7 +102,7 @@ bool EscherStepper::run() {
     bool movex = _xstepper.runSpeed();
     bool movey = _ystepper.runSpeed();
     if (movex || movey) {
-      Serial.printf("ESCHER %d %d\n", _xstepper.currentPosition(), _ystepper.currentPosition());
+      //Serial.printf("ESCHER %d %d\n", _xstepper.currentPosition(), _ystepper.currentPosition());
     }
     return true;
   } else {
