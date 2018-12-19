@@ -104,7 +104,7 @@ waypoints = parseGcode(fileinput.input())
 positions = waypointsToSteps(waypoints)
 
 print '#define GCODE_NUM_POINTS %d' % len(positions)
-print 'const std::pair<int, int> _GCODE_POINTS[%d] = {' % len(positions)
+print 'const std::pair<long, long> _GCODE_POINTS[%d] = {' % len(positions)
 for (x, y) in positions:
   print '  { std::make_pair(%d, %d) },' % (x, y)
 print '};'

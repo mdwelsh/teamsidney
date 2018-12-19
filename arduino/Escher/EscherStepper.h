@@ -9,8 +9,8 @@
 class EscherStepper {
   public:
   EscherStepper(AccelStepper& xstepper, AccelStepper& ystepper);
-  void moveTo(int x, int y);
-  void push(int x, int y);
+  void moveTo(long x, long y);
+  void push(long x, long y);
   bool run();
   void home();
   void clear();
@@ -18,7 +18,8 @@ class EscherStepper {
   private:
   AccelStepper& _xstepper;
   AccelStepper& _ystepper;
-  std::vector<std::pair<int, int>> _pending;
+  std::vector<std::pair<long, long>> _pending;
+  bool _stopped;
 };
 
 
