@@ -11,14 +11,39 @@
 
 #include "Blinky.h"
 
-class PixelMapper {
+class BlinkyMode {
 public:
-  virtual uint32_t PixelColor(int index) = 0;
-  static PixelMapper* Create(const& deviceConfig_t);
+  // Run the mode.
+  virtual void run() = 0;
+  // Create the appropriate BlinkyMode object for the given config.
+  static BlinkyMode* Create(const deviceConfig_t*);
+};
+
+class NoneMode : public BlinkyMode {
+public:
+  void run() { /* Do nothing. */ }
+};
+
+class WipeMode : public BlinkyMode {
+public:
+  WipeMode(const deviceConfig_t* config) : _color(config->color1), _speed(config->speed) {}
+  void run();
+private:
+  uint32_t _color; 
+  int _speed;
+};
+
+class TestMode : public BlinkyMode {
+public:
   void run();
 };
 
-PixelMapper* pixelMapperFactory(deviceConfig_t *config);
+#if 0
+class PixelMapper {
+public:
+  virtual uint32_t PixelColor(int index) = 0;
+  void run();
+};
 
 class SingleColorMapper : public PixelMapper {
 public:
@@ -65,5 +90,6 @@ private:
   float _maxBrightness;
   float _brightness[MAX_PIXELS];
 };
+#endif // 0
 
 #endif

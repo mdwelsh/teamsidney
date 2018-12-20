@@ -61,6 +61,13 @@
 // Maximum length of firmware version string.
 #define MAX_FIRMWARE_LEN 64
 
+// We maintain the strip as a global variable mainly because it can be different types.
+#ifdef USE_NEOPIXEL
+extern Adafruit_NeoPixel *strip;
+#else
+extern Adafruit_DotStar *strip;
+#endif
+
 // Describes the current device configuration.
 typedef struct _deviceConfig {
   char mode[MAX_MODE_LEN];
@@ -71,5 +78,9 @@ typedef struct _deviceConfig {
 } deviceConfig_t;
 
 uint32_t interpolate(uint32_t color1, uint32_t color2, float mix);
+void setPixel(int index, uint32_t c);
+void setAll(uint32_t c);
+void colorWipe(uint32_t c, uint8_t wait);
+uint32_t Wheel(byte WheelPos);
 
 #endif

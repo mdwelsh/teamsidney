@@ -21,12 +21,6 @@
 // We use some magic strings in this constant to ensure that we can easily strip it out of the binary.
 const char BUILD_VERSION[] = ("__Bl!nky__ " __DATE__ " " __TIME__ " " DEVICE_TYPE " " DEVICE_FORMFACTOR " ___");
 
-#ifdef USE_NEOPIXEL
-Adafruit_NeoPixel *strip = NULL;
-#else
-Adafruit_DotStar *strip = NULL;
-#endif
-
 WiFiMulti wifiMulti;
 HTTPClient http;
 
@@ -47,7 +41,14 @@ deviceConfig_t curConfig = (deviceConfig_t) {
 };
 deviceConfig_t nextConfig;
 
-PixelMapper *curMapper = NULL;
+// We maintain the strip as a global variable mainly because it can be different types.
+#ifdef USE_NEOPIXEL
+Adafruit_NeoPixel *strip;
+#else
+Adafruit_DotStar *strip;
+#endif
+
+BlinkyMode *curMode = NULL;
 
 // Used to protect access to curConfig / nextConfig.
 SemaphoreHandle_t configMutex = NULL;
@@ -74,7 +75,7 @@ void TaskCheckin(void *);
 void TaskRunConfig(void *);
 
 void makeNewStrip(int numPixels, int dataPin, int clockPin) {
-  Serial.printf("Making new strip with %d pixels\n", numPixels);
+  Serial.printf("Making new strip with %d pixels, data %d clock %d\n", numPixels, dataPin, clockPin);
   if (strip != NULL) {
     black();
     delete strip;
@@ -98,14 +99,16 @@ void setup() {
   
   pinMode(LED_BUILTIN, OUTPUT);
 
+  configMutex = xSemaphoreCreateMutex();
   memcpy(&nextConfig, &curConfig, sizeof(nextConfig));
   printConfig(&curConfig);
   printConfig(&nextConfig);
 
   makeNewStrip(NUMPIXELS, DEFAULT_DATA_PIN, DEFAULT_CLOCK_PIN);
+  curMode = BlinkyMode::Create(&curConfig);
   initRain();
   initPhantoms();
-  initLightUp();
+  //initLightUp();
 
 #if 0
   for (uint8_t t = 4; t > 0; t--) {
@@ -116,9 +119,9 @@ void setup() {
 #endif
   wifiMulti.addAP("theonet_EXT", "juneaudog");
   
-  configMutex = xSemaphoreCreateMutex();
   xTaskCreate(TaskCheckin, (const char *)"Checkin", 1024*40, NULL, 2, NULL);
   xTaskCreate(TaskRunConfig, (const char *)"Run config", 1024*40, NULL, 8, NULL);
+  Serial.println("Done with setup()");
 }
 
 void printConfig(deviceConfig_t *config) {
@@ -579,6 +582,7 @@ uint32_t Wheel(byte WheelPos) {
 
 int wheelPos = 0; // Current color changing wheel position.
 
+#if 0
 struct {
   uint32_t color;
   byte wheelPos;
@@ -619,6 +623,7 @@ void lightUp(class PixelMapper *pm, int wait) {
 void lightUpSimple(uint32_t color, int wait) {
   lightUp(christmasTwinkler, wait);
 }
+#endif // 0
 
 #if 0
 void christmas(int wait, bool doRandom, bool twinkle) {
@@ -678,12 +683,15 @@ void runConfig() {
 
   bool configChanged = false;
   if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
+    Serial.println("Got semaphore");
     if (memcmp(&curConfig, &nextConfig, sizeof(curConfig))) {
       // Config has changed.
+      Serial.printf("Config changed, old mode %s new mode %s\n", curConfig.mode, nextConfig.mode);
       memcpy(&curConfig, &nextConfig, sizeof(nextConfig));
       configChanged = true;
     }
     xSemaphoreGive(configMutex);
+    Serial.println("Gave back semaphore.");
   } else {
     // Can't get mutex to read config, just bail.
     Serial.println("Warning - runConfig() unable to get config mutex.");
@@ -692,15 +700,18 @@ void runConfig() {
 
   // If we have a new config for the number of pixels, reset the strip.
   if (curConfig.numPixels != strip->numPixels()) {
+    Serial.println("Making new strip...");
     makeNewStrip(curConfig.numPixels, curConfig.dataPin, curConfig.clockPin);
   }
 
+  Serial.printf("configChanged is %s\n", configChanged ? "true" : "false");
   if (configChanged) {
-    delete curMapper;
-    curMapper = pixelMapperFactory(&curConfig);
+    delete curMode;
+    curMode = BlinkyMode::Create(&curConfig);
   }
 
-  curMapper->run();
+  Serial.printf("Calling run on [%x]\n", curMode);
+  curMode->run();
 }
 
 #if 0 // XXX XXX XXX MDW - Need to refactor the below:
@@ -803,7 +814,7 @@ void runConfig() {
     delay(1000);
   }
 }
-#endif
+#endif // 0
 
 void checkin() {
   Serial.print("MAC address ");
