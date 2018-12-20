@@ -3,42 +3,20 @@
 #include <vector>
 #include <Wire.h>
 #include <AccelStepper.h>
+#include <MultiStepper.h>
 #include <Adafruit_MotorShield.h>
 
-#define MAX_SPEED 50.0
-
-EscherStepper::EscherStepper(AccelStepper& xstepper, AccelStepper& ystepper) :
-  _xstepper(xstepper), _ystepper(ystepper), _stopped(true) {
-  _xstepper.setMaxSpeed(MAX_SPEED);
-  //_xstepper.setAcceleration(ACCELERATION);
-  _ystepper.setMaxSpeed(MAX_SPEED);
-  //_ystepper.setAcceleration(ACCELERATION);
-}
+EscherStepper::EscherStepper(MultiStepper &mstepper) :
+  _mstepper(mstepper), _stopped(true) {}
 
 void EscherStepper::clear() {
   _pending.clear();
 }
 
-void EscherStepper::home() {
-  Serial.printf("Waiting for completion of current run...\n");
-  _xstepper.runToPosition();
-  _ystepper.runToPosition();
-  clear();
-  moveTo(-2000, -2000);
-  Serial.printf("Going home...\n");
-  while (_xstepper.distanceToGo() != 0 && _ystepper.distanceToGo() != 0) {
-    _xstepper.runSpeed();
-    _ystepper.runSpeed();
-  }
-  _xstepper.setCurrentPosition(0);
-  _ystepper.setCurrentPosition(0);
-  Serial.printf("Home.\n");
-}
-
 void EscherStepper::moveTo(long x, long y) {
   Serial.printf("moveTo (%d, %d)\n", x, y);
-  _xstepper.moveTo(x);
-  _ystepper.moveTo(y);
+  long target[2] = {x, y};
+  _mstepper.moveTo(target);
 }
 
 void EscherStepper::push(long x, long y) {
@@ -47,9 +25,28 @@ void EscherStepper::push(long x, long y) {
   _pending.push_back(coord);
 }
 
+// Returns true if any steppers still running.
+// Returns false if all have stopped.
+bool EscherStepper::run() {
+  if (!_mstepper.run()) {
+    _stopped = true;
+  }
+  if (_stopped) {
+    if (!_pending.empty()) {
+      // Pick next waypoint.
+      _stopped = false;
+      std::pair<long, long> front = _pending.front();
+      _pending.erase(_pending.begin());
+      moveTo(front.first, front.second);
+    }
+  }
+  return !_stopped;
+}
+
+#if 0
 bool EscherStepper::run() {
   //Serial.printf("ESCHER %d %d\n", _xstepper.currentPosition(), _ystepper.currentPosition());
-  if (_xstepper.distanceToGo() == 0 && _ystepper.distanceToGo() == 0) {
+  if (_xstepper.distanceToGo() <= 0 && _ystepper.distanceToGo() <= 0) {
     if (!_pending.empty()) {
       // Pick next waypoint.
       _stopped = false;
@@ -88,8 +85,8 @@ bool EscherStepper::run() {
       Serial.printf("Moving to %d %d dist %f %f speed %f %f\n", tgtx, tgty, distx, disty, xspeed, yspeed);
       _xstepper.moveTo(tgtx);
       _ystepper.moveTo(tgty);
-      _xstepper.setSpeed(xspeed);
-      _ystepper.setSpeed(yspeed);
+      _xstepper.setSpeed(abs(xspeed));
+      _ystepper.setSpeed(abs(yspeed));
     } else {
       // Nothing to do.
       _stopped = true;
@@ -102,10 +99,11 @@ bool EscherStepper::run() {
     bool movex = _xstepper.runSpeed();
     bool movey = _ystepper.runSpeed();
     if (movex || movey) {
-      //Serial.printf("ESCHER %d %d\n", _xstepper.currentPosition(), _ystepper.currentPosition());
+      Serial.printf("ESCHER %d %d\n", _xstepper.currentPosition(), _ystepper.currentPosition());
     }
     return true;
   } else {
     return false;
   }
 }
+#endif

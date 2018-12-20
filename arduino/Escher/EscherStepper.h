@@ -4,20 +4,22 @@
 #include <vector>
 #include <Wire.h>
 #include <AccelStepper.h>
+#include <MultiStepper.h>
 #include <Adafruit_MotorShield.h>
 
 class EscherStepper {
   public:
-  EscherStepper(AccelStepper& xstepper, AccelStepper& ystepper);
+  //EscherStepper(AccelStepper& xstepper, AccelStepper& ystepper);
+  EscherStepper(MultiStepper& mstepper);
   void moveTo(long x, long y);
   void push(long x, long y);
   bool run();
-  void home();
   void clear();
 
   private:
-  AccelStepper& _xstepper;
-  AccelStepper& _ystepper;
+  //AccelStepper& _xstepper;
+  //AccelStepper& _ystepper;
+  MultiStepper& _mstepper;
   std::vector<std::pair<long, long>> _pending;
   bool _stopped;
 };

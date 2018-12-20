@@ -7,6 +7,11 @@ import sys
 
 import matplotlib.pyplot as plt
 
+# Map from gcode coordinates to step coordinates.
+def mmToSteps(pt):
+  x, y = pt
+  return (int(x * 3.), int(y * 3.))
+
 def atan3(dy, dx):
  a = math.atan2(dy,dx)
  if a < 0:
@@ -17,17 +22,17 @@ def atan3(dy, dx):
 # https://www.marginallyclever.com/2014/03/how-to-improve-the-2-axis-cnc-gcode-interpreter-to-understand-arcs/
 def doArc(posx, posy, x, y, cx, cy, cw, CM_PER_SEGMENT=0.1): 
   retval = []
-  print >> sys.stderr, '\nArc from (%f, %f) to (%f, %f) center (%f, %f) cw %s' % (posx, posy, x, y, cx, cy, cw)
+  #print >> sys.stderr, '\nArc from (%f, %f) to (%f, %f) center (%f, %f) cw %s' % (posx, posy, x, y, cx, cy, cw)
   dx = posx - cx 
   dy = posy - cy
   radius = math.sqrt((dx*dx)+(dy*dy))
-  print >> sys.stderr, 'Radius %f' % radius
+  #print >> sys.stderr, 'Radius %f' % radius
 
   # find the sweep of the arc
   angle1 = atan3(posy - cy, posx - cx)
   angle2 = atan3(y - cy, x - cx)
   sweep = angle2 - angle1
-  print >> sys.stderr, 'Angle1 %f Angle2 %f sweep %f Radius %f' % (angle1, angle2, sweep, radius)
+  #print >> sys.stderr, 'Angle1 %f Angle2 %f sweep %f Radius %f' % (angle1, angle2, sweep, radius)
 
   if sweep < 0 and cw:
     angle2 += 2.0 * math.pi
@@ -35,7 +40,7 @@ def doArc(posx, posy, x, y, cx, cy, cw, CM_PER_SEGMENT=0.1):
     angle1 += 2.0 * math.pi
 
   sweep = angle2 - angle1
-  print >> sys.stderr, 'Now Angle1 %f Angle2 %f sweep %f Radius %f' % (angle1, angle2, sweep, radius)
+  #print >> sys.stderr, 'Now Angle1 %f Angle2 %f sweep %f Radius %f' % (angle1, angle2, sweep, radius)
 
   # get length of arc
   l = abs(sweep) * radius
@@ -64,8 +69,9 @@ def parseGcode(input):
   for line in input:
     m = re.match('(G0[01]) X([\d\.]+) Y([\d\.]+)', line)
     if m:
-      waypoints.append((float(m.group(2)), float(m.group(3))))
-      continue
+      x = float(m.group(2))
+      y = float(m.group(3))
+      waypoints.append((x, y))
 
     m = re.match('(G0[23]) X([-\d\.]+) Y([-\d\.]+) (Z[-\d\.]+)? I([-\d\.]+) J([-\d\.]+)', line)
     if m:
@@ -86,22 +92,24 @@ def parseGcode(input):
       curve = doArc(curx, cury, x, y, curx+i, cury+j, cw)
       for pt in curve:
         waypoints.append(pt)
-      continue
 
     #print >> sys.stderr, 'Cannot parse: ' + line
 
   return waypoints
 
-# Map from gcode coordinates to step coordinates.
-def stepFn(val):
-  x, y = val
-  return (int(x * 4.), int(y * 4.))
-
-def waypointsToSteps(waypoints):
-  return map(stepFn, waypoints)
-
 waypoints = parseGcode(fileinput.input())
-positions = waypointsToSteps(waypoints)
+
+# Map to steps and filter out duplicates.
+
+waypoints = map(mmToSteps, waypoints)
+
+# Remove duplicates.
+prev = None
+positions = []
+for point in waypoints:
+  if prev == None or point != prev:
+    prev = point
+    positions.append(point)
 
 print '#define GCODE_NUM_POINTS %d' % len(positions)
 print 'const std::pair<long, long> _GCODE_POINTS[%d] = {' % len(positions)
