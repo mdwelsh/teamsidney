@@ -41,6 +41,24 @@ deviceConfig_t curConfig = (deviceConfig_t) {
 };
 deviceConfig_t nextConfig;
 
+#define TEST_CONFIG // Define for local testing.
+#ifdef TEST_CONFIG
+// Only used for testing.
+deviceConfig_t testConfig = (deviceConfig_t) {
+  "christmas",
+  true,
+  NUMPIXELS,
+  DEFAULT_DATA_PIN,
+  DEFAULT_CLOCK_PIN,
+  5,   // Color change.
+  20, // Brightness.
+  100, // Speed.
+  0xffff00,   // Color1.
+  0xffb000,   // Color2.
+  ""   // Firmware.
+};
+#endif
+
 // We maintain the strip as a global variable mainly because it can be different types.
 #ifdef USE_NEOPIXEL
 Adafruit_NeoPixel *strip;
@@ -106,11 +124,8 @@ void setup() {
 
   makeNewStrip(NUMPIXELS, DEFAULT_DATA_PIN, DEFAULT_CLOCK_PIN);
   curMode = BlinkyMode::Create(&curConfig);
-  initRain();
-  initPhantoms();
-  //initLightUp();
 
-#if 0
+#if 0 // MDW: I don't think this is necessary.
   for (uint8_t t = 4; t > 0; t--) {
     Serial.printf("[SETUP] WAIT %d...\n", t);
     Serial.flush();
@@ -207,113 +222,26 @@ void mixBetween(uint32_t color1, uint32_t color2, int numsteps, uint8_t wait) {
   delay(wait);
 }
 
+// Input a value 0 to 255 to get a color value.
+// The colours are a transition r - g - b - back to r.
+uint32_t Wheel(byte WheelPos) {
+  WheelPos = 255 - WheelPos;
+  if(WheelPos < 85) {
+    return strip->Color(255 - WheelPos * 3, 0, WheelPos * 3);
+  }
+  if(WheelPos < 170) {
+    WheelPos -= 85;
+    return strip->Color(0, WheelPos * 3, 255 - WheelPos * 3);
+  }
+  WheelPos -= 170;
+  return strip->Color(WheelPos * 3, 255 - WheelPos * 3, 0);
+}
+
 void strobe(uint32_t c, int numsteps, uint8_t wait) {
   mixBetween(0, c, numsteps/2, wait);
   mixBetween(c, 0, numsteps/2, wait);
 }
 
-void rainbow(uint8_t wait) {
-  uint16_t i, j;
-
-  for(j=0; j<256; j++) {
-    for(i=0; i<strip->numPixels(); i++) {
-      strip->setPixelColor(i, Wheel((i+j) & 255));
-      //strip->setPixelColor(i, Wheel(j));
-      //strip->setPixelColor(i, Wheel(i));
-    }
-    strip->show();
-    delay(wait);
-  }
-}
-
-struct {
-  uint32_t color;
-  float value;
-  bool growing;
-} rainState[MAX_PIXELS];
-
-void initRain() {
-  for (int i = 0; i < MAX_PIXELS; i++) {
-    rainState[i].value = 0.0;
-    rainState[i].growing = false;
-  }
-}
-
-void rain(uint32_t color, int maxdrops, int wait,
-  float initValue, float maxValue, float minValue,
-  float growSpeed, float fadeSpeed, bool multi, bool randInit) {  
-    
-  int numActive = 0;
-
-  for (int i = 0; i < strip->numPixels(); i++) {
-    if (rainState[i].growing) {
-      //Serial.printf("Pixel %d is growing and has value %f\n", i, rainState[i].value);
-      numActive++;
-    }
-  }
-
-  // See if we need to fire up more pixels.
-  if (multi) {
-    //Serial.printf("numActive: %d\n", numActive);
-    if (numActive == 0) {
-      // New pixels start all at once
-      for (int i = 0; i < maxdrops; i++) {
-        int p = random(0, strip->numPixels());
-        if (rainState[p].value <= minValue) {
-          if (randInit) {
-            rainState[p].value = random(minValue * 100, maxValue * 100) / 100.0;
-            rainState[p].growing = (random(0, 100) < 50) ? true : false;
-          } else {
-            rainState[p].value = initValue;
-            rainState[p].growing = true;
-          }
-        }
-      }
-    }
-  } else {
-    // Randomly start new pixels
-    if (random(0, strip->numPixels()) <= maxdrops) {
-      int p = random(0, strip->numPixels());
-      if (rainState[p].value <= minValue) {
-        if (randInit) {
-          rainState[p].value = random(minValue * 100, maxValue * 100) / 100.0;
-          rainState[p].growing = (random(0, 100) < 50) ? true : false;
-        } else {
-          rainState[p].value = initValue;
-          rainState[p].growing = true;
-        }
-      }
-    }
-  }
-
-  // Do an update cycle.
-  for (int i = 0; i < strip->numPixels(); i++) {
-    float val = rainState[i].value;
-    if (val <= minValue) {
-      val = minValue;
-    }
-    if (val >= maxValue) {
-      val = maxValue;
-    }
-
-    uint32_t tc = interpolate(0, color, val);
-    strip->setPixelColor(i, tc);
-    
-    if (rainState[i].value >= maxValue) {
-      rainState[i].growing = false;
-    }
-      
-    if (rainState[i].value >= minValue) {
-      if (rainState[i].growing) {
-        rainState[i].value += growSpeed;
-      } else {
-        rainState[i].value -= fadeSpeed;
-      }
-    }
-  }
-  strip->show();
-  delay(wait);
-}
 
 void rainbowCycle(uint8_t wait) {
   uint16_t i, j;
@@ -412,91 +340,6 @@ void skewBrightness() {
   strip->setBrightness(b);
 }
 
-#define MAX_PHANTOMS 5
-struct {
-  int index;
-  uint32_t color;
-  int dir;
-} phantomState[MAX_PHANTOMS];
-
-void initPhantoms() {
-  for (int p = 0; p < MAX_PHANTOMS; p++) {
-    phantomState[p].index = -1;
-  }
-}
-
-void movePhantom(int p) {
-  int pi = phantomState[p].index;
-  int r = random(0, 100);
-  if (random(0, 100) < 10) {
-    phantomState[p].dir *= -1;
-  }
-  int dir = phantomState[p].dir;
-  if (random(0, 100) > 10) {
-    return;
-  }
-  pi += dir;
-  if (pi < 1) {
-    pi = 1;
-  }
-  if (pi > strip->numPixels()-2) {
-    pi = strip->numPixels()-2;
-  }
-  phantomState[p].index = pi;
-}
-
-void drawPhantom(int p, int tail) {
-  int pi = phantomState[p].index;
-  uint32_t color = phantomState[p].color;
-  int dir = phantomState[p].dir * -1;
-  for (int j = 0; j < tail; j++) {
-    int index = pi + (j * dir);
-    float fade = (j*1.0) / (tail * 1.0);
-    if (fade > 1.0) {
-      fade = 1.0;
-    }
-    uint32_t tc = interpolate(color, 0, fade);
-    setPixel(index, tc);
-  }
-  for (int j = 0; j < tail/2; j++) {
-    int index = pi - (j * dir);
-    float fade = (j*1.0) / (tail * 1.0);
-    if (fade > 1.0) {
-      fade = 1.0;
-    }
-    uint32_t tc = interpolate(color, 0, fade);
-    setPixel(index, tc);
-  }
-}
-
-void phantom(uint32_t color, int numPhantoms, int tail, int wait) {
-  for (int p = 0; p < numPhantoms; p++) {
-    phantomState[p].index = random(1, strip->numPixels()-1);
-    phantomState[p].color = color;
-    if (random(0, 100) < 50) {
-      phantomState[p].dir = 1;
-    } else {
-      phantomState[p].dir = -1;
-    }
-  }
-  for (int p = numPhantoms; p < MAX_PHANTOMS; p++) {
-    phantomState[p].index = -1;
-  }
-  
-  for (int i = 0; i < 100; i++) {
-    if (random(0, 100) < 20) {
-      skewBrightness();
-    }
-    setAll(0);
-    for (int p = 0; p < numPhantoms; p++) {
-      movePhantom(p);
-      drawPhantom(p, tail);
-    }
-    strip->show();
-    delay(wait);
-  }
-}
-
 void bounce(uint32_t color, int wait) {
   colorWipe(0, 0); // Set to black.
 
@@ -565,102 +408,7 @@ void comet(uint32_t color, int tail, int wait) {
   }
 }
 
-// Input a value 0 to 255 to get a color value.
-// The colours are a transition r - g - b - back to r.
-uint32_t Wheel(byte WheelPos) {
-  WheelPos = 255 - WheelPos;
-  if(WheelPos < 85) {
-    return strip->Color(255 - WheelPos * 3, 0, WheelPos * 3);
-  }
-  if(WheelPos < 170) {
-    WheelPos -= 85;
-    return strip->Color(0, WheelPos * 3, 255 - WheelPos * 3);
-  }
-  WheelPos -= 170;
-  return strip->Color(WheelPos * 3, 255 - WheelPos * 3, 0);
-}
-
-int wheelPos = 0; // Current color changing wheel position.
-
 #if 0
-struct {
-  uint32_t color;
-  byte wheelPos;
-  float brightness;
-} lightUpState[MAX_PIXELS];
-
-#define NUM_CHRISTMAS_COLORS 5
-const uint32_t CHRISTMAS_COLORS[] = {
-  0xff0000,
-  0x00ff00,
-  0x0000ff,
-  0xff00ff,
-  0xffac00,
-};
-
-PixelMapper *christmasTwinkler;
-
-void initLightUp() {
-  for (int i = 0; i < MAX_PIXELS; i++) {
-    lightUpState[i].color = 0x0;
-    lightUpState[i].wheelPos = 0;
-    lightUpState[i].brightness = 1.0;
-  }
-
-  christmasTwinkler = new Twinkler(
-    new MultiColorMapper(CHRISTMAS_COLORS, NUM_CHRISTMAS_COLORS), 10, 0.2, 1.0);  
-}
-
-void lightUp(class PixelMapper *pm, int wait) {
-  for(uint16_t i = 0; i < strip->numPixels(); i++) {
-    uint32_t c = pm->PixelColor(i);
-    strip->setPixelColor(i, c);
-  }
-  strip->show();
-  delay(wait);
-}
-
-void lightUpSimple(uint32_t color, int wait) {
-  lightUp(christmasTwinkler, wait);
-}
-#endif // 0
-
-#if 0
-void christmas(int wait, bool doRandom, bool twinkle) {
-  for(uint16_t i=0; i < strip->numPixels(); i++) {
-    uint32_t c;
-    if (doRandom) {
-      if (christmasState[i].wheelPos == 0) {
-        christmasState[i].wheelPos = random(1, NUM_CHRISTMAS_COLORS);
-        christmasState[i].brightness = 1.0;
-      }
-      c = CHRISTMAS_COLORS[christmasState[i].wheelPos-1];
-    } else {
-      c = CHRISTMAS_COLORS[i % NUM_CHRISTMAS_COLORS];
-    }
-    if (twinkle) {
-      if (random(0, 100) <= 25) {
-        float step = random(0, 10) / 100.0;
-        if (random(0, 10) < 5) {
-          christmasState[i].brightness += step;
-        } else {
-          christmasState[i].brightness -= step;
-        }
-        if (christmasState[i].brightness < 0.2) {
-          christmasState[i].brightness = 0.2;
-        }
-        if (christmasState[i].brightness > 1.0) {
-          christmasState[i].brightness = 1.0;
-        }
-      }
-      c = interpolate(0, c, christmasState[i].brightness);
-    }
-    strip->setPixelColor(i, c);
-  }
-  strip->show();
-  delay(wait);
-}
-
 void christmasRainbow(int wait) {
   for(uint16_t i=0; i < strip->numPixels(); i++) {
     uint32_t c;
@@ -683,7 +431,6 @@ void runConfig() {
 
   bool configChanged = false;
   if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
-    Serial.println("Got semaphore");
     if (memcmp(&curConfig, &nextConfig, sizeof(curConfig))) {
       // Config has changed.
       Serial.printf("Config changed, old mode %s new mode %s\n", curConfig.mode, nextConfig.mode);
@@ -691,7 +438,6 @@ void runConfig() {
       configChanged = true;
     }
     xSemaphoreGive(configMutex);
-    Serial.println("Gave back semaphore.");
   } else {
     // Can't get mutex to read config, just bail.
     Serial.println("Warning - runConfig() unable to get config mutex.");
@@ -704,13 +450,11 @@ void runConfig() {
     makeNewStrip(curConfig.numPixels, curConfig.dataPin, curConfig.clockPin);
   }
 
-  Serial.printf("configChanged is %s\n", configChanged ? "true" : "false");
   if (configChanged) {
     delete curMode;
     curMode = BlinkyMode::Create(&curConfig);
   }
 
-  Serial.printf("Calling run on [%x]\n", curMode);
   curMode->run();
 }
 
@@ -869,6 +613,11 @@ void checkin() {
 
 void readConfig() {
   Serial.println("readConfig called");
+
+#ifdef TEST_CONFIG
+  memcpy(&nextConfig, &testConfig, sizeof(nextConfig));
+  return;
+#else
   
   String url = "https://team-sidney.firebaseio.com/strips/" + WiFi.macAddress() + ".json";
   http.setTimeout(10000);
@@ -932,11 +681,15 @@ void readConfig() {
   if (needsFirmwareUpdate) {
     updateFirmware();
   }
+#endif // TEST_CONFIG
 }
 
 /* Task to periodically checkin and read new config. */
 void TaskCheckin(void *pvParameters) {
   for (;;) {
+#ifdef TEST_CONFIG
+    readConfig();
+#else
     if ((wifiMulti.run() == WL_CONNECTED)) {
       for (int i = 0; i < 5; i++) {
         flashLed();
@@ -944,6 +697,7 @@ void TaskCheckin(void *pvParameters) {
       checkin();
       readConfig();
     }
+#endif // TEST_CONFIG
     vTaskDelay(10000 / portTICK_PERIOD_MS);
   }
 }
