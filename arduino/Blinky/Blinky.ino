@@ -41,7 +41,7 @@ deviceConfig_t curConfig = (deviceConfig_t) {
 };
 deviceConfig_t nextConfig;
 
-#define TEST_CONFIG // Define for local testing.
+//#define TEST_CONFIG // Define for local testing.
 #ifdef TEST_CONFIG
 // Only used for testing.
 deviceConfig_t testConfig = (deviceConfig_t) {
@@ -125,15 +125,14 @@ void setup() {
   makeNewStrip(NUMPIXELS, DEFAULT_DATA_PIN, DEFAULT_CLOCK_PIN);
   curMode = BlinkyMode::Create(&curConfig);
 
-#if 0 // MDW: I don't think this is necessary.
   for (uint8_t t = 4; t > 0; t--) {
     Serial.printf("[SETUP] WAIT %d...\n", t);
     Serial.flush();
     delay(1000);
   }
-#endif
   wifiMulti.addAP("theonet_EXT", "juneaudog");
-  
+  //wifiMulti.addAP("theonet", "juneaudog");
+
   xTaskCreate(TaskCheckin, (const char *)"Checkin", 1024*40, NULL, 2, NULL);
   xTaskCreate(TaskRunConfig, (const char *)"Run config", 1024*40, NULL, 8, NULL);
   Serial.println("Done with setup()");
@@ -665,10 +664,11 @@ void readConfig() {
     memcpy(nextConfig.firmwareVersion, (const char *)cc["version"], sizeof(nextConfig.firmwareVersion));
 
     // If the firmware version needs to be updated, kick off the update.
-    if (nextConfig.firmwareVersion != BUILD_VERSION &&
-        nextConfig.firmwareVersion != "none" &&
-        nextConfig.firmwareVersion != "" &&
-        nextConfig.firmwareVersion != "current") {
+    if (strcmp(nextConfig.firmwareVersion, BUILD_VERSION) &&
+        strcmp(nextConfig.firmwareVersion, "none") &&
+        strcmp(nextConfig.firmwareVersion, "") &&
+        strcmp(nextConfig.firmwareVersion, "current")) {
+      Serial.printf("readConfig: next firmware version %s triggering update\n", nextConfig.firmwareVersion);
       needsFirmwareUpdate = true;
     }
     
@@ -696,6 +696,8 @@ void TaskCheckin(void *pvParameters) {
       }
       checkin();
       readConfig();
+    } else {
+      Serial.println("TaskCheckin: Not connected to WiFi");
     }
 #endif // TEST_CONFIG
     vTaskDelay(10000 / portTICK_PERIOD_MS);
@@ -710,7 +712,7 @@ void TaskRunConfig(void *pvParameters) {
 }
 
 void readFirmwareMetadata(String firmwareVersion) {
-  Serial.println("readFirmwareMetadata called");
+  Serial.printf("readFirmwareMetadata called for version %s", firmwareVersion);
   
   String url = "https://team-sidney.firebaseio.com/firmware/" + firmwareVersion + ".json";
   http.setTimeout(1000);
@@ -740,10 +742,10 @@ void readFirmwareMetadata(String firmwareVersion) {
 }
 
 void updateFirmware() {
-  String newVersion;
+  char newVersion[MAX_FIRMWARE_LEN];
   
   if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
-    newVersion = curConfig.firmwareVersion;
+    memcpy(newVersion, nextConfig.firmwareVersion, sizeof(nextConfig.firmwareVersion));
     xSemaphoreGive(configMutex);
   } else {
     Serial.println("Warning - updateFirmware() unable to get config mutex");
@@ -751,7 +753,7 @@ void updateFirmware() {
   }
   
   Serial.printf("Current firmware version: %s\n", BUILD_VERSION);
-  Serial.println("Desired firmware version: " + newVersion);
+  Serial.printf("Desired firmware version: %s\n", newVersion);
 
   readFirmwareMetadata(newVersion);
   Serial.println("Read firmware metadata, URL is " + firmwareUrl);

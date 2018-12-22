@@ -12,7 +12,7 @@
 // Define the below to use Neopixels instead of DotStars.
 //#define USE_NEOPIXEL
 // Define the below to use a Dotstar matrix instead of a strip.
-#define DOTSTAR_MATRIX
+//#define DOTSTAR_MATRIX
 
 #ifdef USE_NEOPIXEL
 #include <Adafruit_NeoPixel.h>
@@ -33,7 +33,7 @@
 #endif
 
 // Start with this many pixels, but can be reconfigured.
-#define NUMPIXELS 72
+#define NUMPIXELS 300
 // Maximum number, for the sake of maintaining state.
 #define MAX_PIXELS 350
 #define NEOPIXEL_DATA_PIN 14

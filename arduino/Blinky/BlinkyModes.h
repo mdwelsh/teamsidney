@@ -27,11 +27,14 @@ public:
 class ColorChangingMode : public BlinkyMode {
 public:
   ColorChangingMode(const deviceConfig_t *config)
-    : _color1(config->color1), _color2(config->color2), _speed(config->speed),
-      _colorChange(config->colorChange), _wheel1(0), _wheel2(128) {}
+    : _brightness(config->brightness),
+      _color1(config->color1), _color2(config->color2),
+      _speed(config->speed), _colorChange(config->colorChange),
+      _wheel1(0), _wheel2(128) {}
   void run();
 protected:
-  uint32_t _color1, _color2, _speed, _colorChange;
+  uint32_t _color1, _color2;
+  int _speed, _colorChange, _brightness;
 private:
   int _wheel1, _wheel2;
 };

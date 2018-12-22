@@ -1,12 +1,17 @@
 #include "Blinky.h"
 #include "BlinkyModes.h"
 
-#define NUM_CHRISTMAS_COLORS 5
+#define NUM_CHRISTMAS_COLORS 10
 const uint32_t CHRISTMAS_COLORS[] = {
+  0x0,
   0xff0000,
+  0x0,
   0x00ff00,
+  0x0,
   0x0000ff,
+  0x0,
   0xff00ff,
+  0x0,
   0xffac00,
 };
 
@@ -53,7 +58,7 @@ BlinkyMode* BlinkyMode::Create(const deviceConfig_t *config) {
     colors[0] = config->color1;
     colors[1] = config->color2;
     PixelMapper *m = new RandomColorMapper(config, colors, 2);
-    return new Rain(config, m, strip->numPixels(), 0.02, 1.0, 0.0, 0.1, 0.2, 1.0, false, false);
+    return new Rain(config, m, strip->numPixels()*2, 0.02, 1.0, 0.0, 0.1, 0.02, 0.5, false, false);
   }
   if (!strcmp(config->mode, "sparkle")) {
     uint32_t *colors = (uint32_t *)malloc(2 * sizeof(uint32_t));
@@ -83,7 +88,8 @@ BlinkyMode* BlinkyMode::Create(const deviceConfig_t *config) {
     PixelMapper *m = new RandomColorMapper(config, colors, 2);
     return new Rain(config, m, strip->numPixels(), 0.1, 1.0, 0.1, 0.1, 0.01, 0.1, false, true);
   }
-  if (!strcmp(config->mode, "christmas")) {
+  // Kind of a hack to allow Google Assistant to set the value to the capitalized version.
+  if (!strcmp(config->mode, "christmas") || !strcmp(config->mode, "Christmas")) {
     PixelMapper *m = new MultiColorMapper(config, CHRISTMAS_COLORS, NUM_CHRISTMAS_COLORS);
     return new Rain(config, m, strip->numPixels(), 0.7, 0.8, 0.6, 0.1, 0.1, 0.1, false, true);
   }
@@ -93,6 +99,7 @@ BlinkyMode* BlinkyMode::Create(const deviceConfig_t *config) {
 }
 
 void ColorChangingMode::run() {
+  strip->setBrightness(_brightness);
   if (_colorChange > 0) {
     _wheel1 += _colorChange;
     _wheel1 = _wheel1 % 255;
@@ -112,15 +119,10 @@ void WipeMode::run() {
 }
 
 void TestMode::run() {
-  Serial.println("TestMode::run() called");
   strip->setBrightness(50);
-  Serial.println("Doing colorWipe1...");
   colorWipe(0xff0000, 5);
-  Serial.println("Doing colorWipe2...");
   colorWipe(0x00ff00, 5);
-  Serial.println("Doing colorWipe3...");
   colorWipe(0x0000ff, 5);
-  Serial.println("Doing colorWipe4...");
   colorWipe(0, 5);
 }
 
