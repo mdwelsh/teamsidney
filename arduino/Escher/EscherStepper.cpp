@@ -14,13 +14,13 @@ void EscherStepper::clear() {
 }
 
 void EscherStepper::moveTo(long x, long y) {
-  Serial.printf("moveTo (%d, %d)\n", x, y);
+  Serial.printf("moveTo %d %d\n", x, y);
   long target[2] = {x, y};
   _mstepper.moveTo(target);
 }
 
 void EscherStepper::push(long x, long y) {
-  Serial.printf("push (%d, %d)\n", x, y);
+  Serial.printf("push %d %d\n", x, y);
   std::pair<long, long> coord(x, y);
   _pending.push_back(coord);
 }

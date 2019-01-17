@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 # Map from gcode coordinates to step coordinates.
 def mmToSteps(pt):
   x, y = pt
-  return (int(x * 8.), int(y * 8.))
+  return (int(x * 1.), int(y * 1.))
 
 def atan3(dy, dx):
  a = math.atan2(dy,dx)
