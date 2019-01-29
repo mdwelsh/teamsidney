@@ -6,7 +6,7 @@
 #include "EscherStepper.h"
 
 // Uncomment the following to print generated GCode.
-#define USE_GCODE
+//\#define USE_GCODE
 #ifdef USE_GCODE
 #include "gcode.h"
 #endif
@@ -22,7 +22,7 @@
 #define BACKWARD_STEP BACKWARD
 #endif
 
-#define MAX_SPEED 50.0
+#define MAX_SPEED 200.0
 
 Adafruit_MotorShield AFMS = Adafruit_MotorShield();
 Adafruit_StepperMotor *myStepper1 = AFMS.getStepper(200, 1);
@@ -84,17 +84,31 @@ void circle(EscherStepper &e, float radius) {
   for (theta = 0.0; theta < PI*2.0; theta += (PI*2.0)/100.0) {
     float x = radius * sin(theta);
     float y = radius * cos(theta);
-    Serial.printf("Radius %f theta %f x %f y %f floor x %d floor y %d\n", radius, theta, x, y, floor(x), floor(y));
+    //Serial.printf("Radius %f theta %f x %f y %f floor x %d floor y %d\n", radius, theta, x, y, floor(x), floor(y));
     e.push(floor(x), floor(y));
   }
   e.push(floor(radius * sin(0.0)), floor(radius * cos(0.0)));
 }
 
+void zigzag(EscherStepper &e) {
+  long height = 20;
+  long backlash = 10;
+  for (int row = 30; row >= 0; row--) {
+    long dist = (row + 1) * height;
+    // Start
+    e.push(0, row*height);
+    // Forward
+    e.push(dist, row*height);
+    // Back
+    e.push(0-backlash, row*height);
+  }
+}
+
 int curPoint = 0;
 
 void setup() {  
-  Serial.begin(115200);
-  Serial.printf("Starting\n");
+  Serial.begin(2000000);
+  //Serial.printf("Starting\n");
   stepper1.setMaxSpeed(MAX_SPEED);
   stepper2.setMaxSpeed(MAX_SPEED);
   mstepper.addStepper(stepper1);
@@ -105,21 +119,24 @@ void setup() {
   escher.push(_GCODE_POINTS[0].first, _GCODE_POINTS[0].second);
 #else
   //grid(escher, 100, 10, 5);
-  square(escher, 300);
+  //square(escher, 300);
+  zigzag(escher);
 #endif
 }
 
 void loop() {
+  //Serial.printf("MDW %d %d\n", stepper1.currentPosition(), stepper2.currentPosition());
+  //Serial.flush();
+  
   if (!escher.run()) {
-    
 #ifdef USE_GCODE
     curPoint++;
     if (curPoint < GCODE_NUM_POINTS) {
-      Serial.printf("Escher is idle, pushing point %d/%d\n", curPoint+1, GCODE_NUM_POINTS);
+      //Serial.printf("Escher is idle, pushing point %d/%d\n", curPoint+1, GCODE_NUM_POINTS);
       escher.push(_GCODE_POINTS[curPoint].first, _GCODE_POINTS[curPoint].second);
     }
 #else
-    square(escher, 300);
+    //square(escher, 300);
 #endif
   }
 }

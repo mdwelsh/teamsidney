@@ -14,13 +14,13 @@ void EscherStepper::clear() {
 }
 
 void EscherStepper::moveTo(long x, long y) {
-  Serial.printf("moveTo %d %d\n", x, y);
+  //Serial.printf("moveTo %d %d\n", x, y);
   long target[2] = {x, y};
   _mstepper.moveTo(target);
 }
 
 void EscherStepper::push(long x, long y) {
-  Serial.printf("push %d %d\n", x, y);
+  //Serial.printf("push %d %d\n", x, y);
   std::pair<long, long> coord(x, y);
   _pending.push_back(coord);
 }
@@ -52,7 +52,7 @@ bool EscherStepper::run() {
       _stopped = false;
       std::pair<long, long> front = _pending.front();
       _pending.erase(_pending.begin());
-      Serial.printf("Next waypoint: (%d, %d)\n", front.first, front.second);
+      //Serial.printf("Next waypoint: (%d, %d)\n", front.first, front.second);
 
       // Calculate speed for each stepper to ensure linear path.
       long curx = _xstepper.currentPosition();
@@ -82,7 +82,7 @@ bool EscherStepper::run() {
         } 
       }
 
-      Serial.printf("Moving to %d %d dist %f %f speed %f %f\n", tgtx, tgty, distx, disty, xspeed, yspeed);
+      //Serial.printf("Moving to %d %d dist %f %f speed %f %f\n", tgtx, tgty, distx, disty, xspeed, yspeed);
       _xstepper.moveTo(tgtx);
       _ystepper.moveTo(tgty);
       _xstepper.setSpeed(abs(xspeed));
@@ -99,7 +99,7 @@ bool EscherStepper::run() {
     bool movex = _xstepper.runSpeed();
     bool movey = _ystepper.runSpeed();
     if (movex || movey) {
-      Serial.printf("ESCHER %d %d\n", _xstepper.currentPosition(), _ystepper.currentPosition());
+      //Serial.printf("ESCHER %d %d\n", _xstepper.currentPosition(), _ystepper.currentPosition());
     }
     return true;
   } else {
