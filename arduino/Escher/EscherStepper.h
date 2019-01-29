@@ -22,6 +22,7 @@ class EscherStepper {
   MultiStepper& _mstepper;
   std::vector<std::pair<long, long>> _pending;
   bool _stopped;
+  long _backlash_x, _backlash_y, _last_x, _last_y, _dir_x, _dir_y;
 };
 
 
