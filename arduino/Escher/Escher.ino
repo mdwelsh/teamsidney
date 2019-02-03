@@ -6,7 +6,7 @@
 #include "EscherStepper.h"
 
 // Uncomment the following to print generated GCode.
-//\#define USE_GCODE
+//#define USE_GCODE
 #ifdef USE_GCODE
 #include "gcode.h"
 #endif
@@ -22,7 +22,7 @@
 #define BACKWARD_STEP BACKWARD
 #endif
 
-#define MAX_SPEED 200.0
+#define MAX_SPEED 100.0
 
 Adafruit_MotorShield AFMS = Adafruit_MotorShield();
 Adafruit_StepperMotor *myStepper1 = AFMS.getStepper(200, 1);
@@ -49,6 +49,14 @@ void square(EscherStepper& e, int side) {
   e.push(side, 0);
   e.push(side, side);
   e.push(0, side);
+  e.push(0, 0);
+}
+
+void star(EscherStepper& e, int side) {
+  e.push(side, side);
+  e.push(side/2, -(side/5));
+  e.push(side/5, side);
+  e.push(side + (side/5), 0);
   e.push(0, 0);
 }
 
@@ -104,6 +112,22 @@ void zigzag(EscherStepper &e) {
   }
 }
 
+void spiral(EscherStepper &e) {
+  int x = 0;
+  int y = 0;
+  int len = 10;
+  for (int cycle = 1; cycle < 20; cycle+=2) {
+    y += cycle * len;
+    e.push(x, y);
+    x += cycle * len;
+    e.push(x, y);
+    y -= (cycle+1) * len;
+    e.push(x, y);
+    x -= (cycle+1) * len;
+    e.push(x, y);
+  }
+}
+
 int curPoint = 0;
 
 void setup() {  
@@ -118,9 +142,11 @@ void setup() {
 #ifdef USE_GCODE
   escher.push(_GCODE_POINTS[0].first, _GCODE_POINTS[0].second);
 #else
-  //grid(escher, 100, 10, 5);
+  //grid(escher, 100, 4, 3);
   //square(escher, 300);
-  zigzag(escher);
+  star(escher, 500);
+  //zigzag(escher);
+  //spiral(escher);
 #endif
 }
 
@@ -137,6 +163,7 @@ void loop() {
     }
 #else
     //square(escher, 300);
+    star(escher, 500);
 #endif
   }
 }

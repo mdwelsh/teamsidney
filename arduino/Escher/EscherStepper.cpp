@@ -21,25 +21,52 @@ void EscherStepper::clear() {
 }
 
 void EscherStepper::moveTo(long x, long y) {
+
+#ifndef BACKLASH_X
+  Serial.printf("moveTo (%d %d)\n", x, y);
+  long target[2] = {x + _backlash_x, y + _backlash_y};
+  _mstepper.moveTo(target);
+  
+#else
   // Figure out if we're reversing direction in x or y axes.
+
   long dirx = x - _last_x;
+  if (dirx > 0) {
+    dirx = 1;
+  } else if (dirx < 0) {
+    dirx = -1;
+  }
   long diry = y - _last_y;
+  if (diry > 0) {
+    diry = 1;
+  } else if (diry < 0) {
+    diry = -1;
+  }
   if (dirx != _dir_x) {
-    _backlash_x = (dirx * BACKLASH_X);
+    _backlash_x += (dirx * BACKLASH_X);
   }
   if (diry != _dir_y) {
-    _backlash_y = (diry * BACKLASH_Y);
+    _backlash_y += (diry * BACKLASH_Y);
   }
   
   long target[2] = {x + _backlash_x, y + _backlash_y};
+
+  Serial.printf("moveTo (%d %d) target (%d %d) last (%d %d) dir (%d %d) lastdir (%d %d) bl (%d %d)\n",
+    x, y, target[0], target[1], _last_x, _last_y, dirx, diry, _dir_x, _dir_y, _backlash_x, _backlash_y);
+
   _last_x = x;
   _last_y = y;
-  _dir_x = dirx;
-  _dir_y = diry;
+  
+  // Don't want to add backlash when transitioning from x -> 0 -> x
+  if (dirx != 0) {
+    _dir_x = dirx;
+  }
+  if (diry != 0) {
+    _dir_y = diry;
+  }
 
-  Serial.printf("moveTo (%d %d) last (%d %d) dir (%d %d) last (%d %d) bl (%d %d)\n",
-    x, y, _last_x, _last_y, dirx, diry, _dir_x, _dir_y, _backlash_x, _backlash_y);
   _mstepper.moveTo(target);
+  #endif
 }
 
 void EscherStepper::push(long x, long y) {
