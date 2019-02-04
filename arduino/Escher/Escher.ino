@@ -6,7 +6,7 @@
 #include "EscherStepper.h"
 
 // Uncomment the following to print generated GCode.
-//#define USE_GCODE
+#define USE_GCODE
 #ifdef USE_GCODE
 #include "gcode.h"
 #endif
@@ -27,7 +27,7 @@
 Adafruit_MotorShield AFMS = Adafruit_MotorShield();
 Adafruit_StepperMotor *myStepper1 = AFMS.getStepper(200, 1);
 Adafruit_StepperMotor *myStepper2 = AFMS.getStepper(200, 2);
-void forwardstep1() {  
+void forwardstep1() {
   myStepper1->onestep(FORWARD_STEP, SINGLE);
 }
 void backwardstep1() {

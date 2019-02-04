@@ -8,7 +8,7 @@
 
 // In practice, these should probably be calibrated on a per-Etch-a-Sketch basis.
 #define BACKLASH_X 10
-#define BACKLASH_Y 10
+#define BACKLASH_Y 15
 
 EscherStepper::EscherStepper(MultiStepper &mstepper) :
   _mstepper(mstepper), _stopped(true),
@@ -51,6 +51,7 @@ void EscherStepper::moveTo(long x, long y) {
   
   long target[2] = {x + _backlash_x, y + _backlash_y};
 
+  Serial.printf("MDW %d %d %d %d\n", x, y, target[0], target[1]);
   Serial.printf("moveTo (%d %d) target (%d %d) last (%d %d) dir (%d %d) lastdir (%d %d) bl (%d %d)\n",
     x, y, target[0], target[1], _last_x, _last_y, dirx, diry, _dir_x, _dir_y, _backlash_x, _backlash_y);
 
