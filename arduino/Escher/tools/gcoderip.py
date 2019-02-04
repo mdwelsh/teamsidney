@@ -1,5 +1,11 @@
 #!/usr/bin/python
 
+# This script converts GCode into a header file that
+# contains an array of {x, y} coordinates representing
+# stepper motor positions. It understands simple GCode
+# commands (G01, G02, and G03 only) and ignores all others
+# in the file.
+
 import fileinput
 import math
 import re
@@ -7,10 +13,13 @@ import sys
 
 import matplotlib.pyplot as plt
 
-# Map from gcode coordinates to step coordinates.
-def mmToSteps(pt):
-  x, y = pt
-  return (int(x * 1.5), int(y * 1.5))
+# Width and height of Etch-a-Sketch in step units.
+# You can determine this experimentally (and it depends
+# on things like gearing, which steppers are being used,
+# etc.)
+WIDTH_STEPS = 700
+HEIGHT_STEPS = 500
+
 
 def atan3(dy, dx):
  a = math.atan2(dy,dx)
@@ -18,21 +27,19 @@ def atan3(dy, dx):
    a = (math.pi * 2.0) + a
  return a
 
+
 # Adapted from:
 # https://www.marginallyclever.com/2014/03/how-to-improve-the-2-axis-cnc-gcode-interpreter-to-understand-arcs/
 def doArc(posx, posy, x, y, cx, cy, cw, CM_PER_SEGMENT=0.1): 
   retval = []
-  #print >> sys.stderr, '\nArc from (%f, %f) to (%f, %f) center (%f, %f) cw %s' % (posx, posy, x, y, cx, cy, cw)
   dx = posx - cx 
   dy = posy - cy
   radius = math.sqrt((dx*dx)+(dy*dy))
-  #print >> sys.stderr, 'Radius %f' % radius
 
   # find the sweep of the arc
   angle1 = atan3(posy - cy, posx - cx)
   angle2 = atan3(y - cy, x - cx)
   sweep = angle2 - angle1
-  #print >> sys.stderr, 'Angle1 %f Angle2 %f sweep %f Radius %f' % (angle1, angle2, sweep, radius)
 
   if sweep < 0 and cw:
     angle2 += 2.0 * math.pi
@@ -40,7 +47,6 @@ def doArc(posx, posy, x, y, cx, cy, cw, CM_PER_SEGMENT=0.1):
     angle1 += 2.0 * math.pi
 
   sweep = angle2 - angle1
-  #print >> sys.stderr, 'Now Angle1 %f Angle2 %f sweep %f Radius %f' % (angle1, angle2, sweep, radius)
 
   # get length of arc
   l = abs(sweep) * radius
@@ -64,7 +70,7 @@ def doArc(posx, posy, x, y, cx, cy, cw, CM_PER_SEGMENT=0.1):
 
 
 def parseGcode(input):
-  waypoints = [(0.0, 0.0)]
+  waypoints = []
 
   for line in input:
     m = re.match('(G0[01]) X([\d\.]+) Y([\d\.]+)', line)
@@ -86,38 +92,68 @@ def parseGcode(input):
       j = float(m.group(6))
       cw = False
       if m.group(1) == 'G03':
-        # Docs say that G02 is clockwise, but maybe my math is wrong (or I'm flipped around
-        # in the y-axis) since G03 needs to be CW for this to work.
+        # Docs say that G02 is clockwise, but maybe my math is wrong
+        # (or I'm flipped around in the y-axis) since G03 needs to
+        # be CW for this to work.
         cw = True
       curve = doArc(curx, cury, x, y, curx+i, cury+j, cw)
       for pt in curve:
         waypoints.append(pt)
 
-    #print >> sys.stderr, 'Cannot parse: ' + line
+
+  # Trim off (0, 0) point tacked on at end by Inkscape GCode plugin
+  if waypoints[-1] == (0., 0.):
+    waypoints = waypoints[:-1]
 
   return waypoints
 
+
+def scaleToScreen(pts):
+  # Find min and max ranges.
+  minx = min([x for (x, y) in pts])
+  maxx = max([x for (x, y) in pts])
+  miny = min([y for (x, y) in pts])
+  maxy = max([y for (x, y) in pts])
+  dx = maxx - minx
+  dy = maxy - miny
+  # Scale longest axis to fit.
+  if dx > dy:
+    scale = WIDTH_STEPS / dx
+  else:
+    scale = HEIGHT_STEPS / dy
+  ret = []
+  for (x, y) in pts:
+    tx = (x-minx) * scale
+    ty = (y-miny) * scale
+    ret.append([tx, ty])
+  return ret
+
+
+def removeDuplicates(pts):
+  prev = None
+  ret = []
+  for point in pts:
+    if prev == None or point != prev:
+      prev = point
+      ret.append(point)
+  return ret
+
+
+# Parse and process the input file.
 waypoints = parseGcode(fileinput.input())
+waypoints = scaleToScreen(waypoints)
+waypoints = removeDuplicates(waypoints)
 
-# Map to steps and filter out duplicates.
-
-waypoints = map(mmToSteps, waypoints)
-
-# Remove duplicates.
-prev = None
-positions = []
-for point in waypoints:
-  if prev == None or point != prev:
-    prev = point
-    positions.append(point)
-
-print '#define GCODE_NUM_POINTS %d' % len(positions)
-print 'const std::pair<long, long> _GCODE_POINTS[%d] = {' % len(positions)
-for (x, y) in positions:
+# Write out the output.
+print '#define GCODE_NUM_POINTS %d' % len(waypoints)
+print 'const std::pair<long, long> _GCODE_POINTS[%d] = {' % len(waypoints)
+for (x, y) in waypoints:
   print '  { std::make_pair(%d, %d) },' % (x, y)
 print '};'
 
-xes = [x for (x, y) in positions]
-yes = [y for (x, y) in positions]
+# Draw it on the screen.
+xes = [x for (x, y) in waypoints]
+yes = [y for (x, y) in waypoints]
 plt.plot(xes, yes)
+plt.axes().set_aspect('equal')
 plt.show()
