@@ -129,6 +129,7 @@ void spiral(EscherStepper &e) {
 }
 
 int curPoint = 0;
+int curLen = 10;
 
 void setup() {  
   Serial.begin(2000000);
@@ -143,8 +144,8 @@ void setup() {
   escher.push(_GCODE_POINTS[0].first, _GCODE_POINTS[0].second);
 #else
   //grid(escher, 100, 4, 3);
-  //square(escher, 300);
-  star(escher, 500);
+  square(escher, curLen);
+  //star(escher, 500);
   //zigzag(escher);
   //spiral(escher);
 #endif
@@ -162,8 +163,12 @@ void loop() {
       escher.push(_GCODE_POINTS[curPoint].first, _GCODE_POINTS[curPoint].second);
     }
 #else
-    //square(escher, 300);
-    star(escher, 500);
+    if (curLen >= 100) {
+      curLen += 100;
+    } else {
+      curLen += 10;
+    }
+    square(escher, curLen);
 #endif
   }
 }

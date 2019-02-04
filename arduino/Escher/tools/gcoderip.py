@@ -17,7 +17,11 @@ import matplotlib.pyplot as plt
 # You can determine this experimentally (and it depends
 # on things like gearing, which steppers are being used,
 # etc.)
-WIDTH_STEPS = 700
+# For larger knobs
+#WIDTH_STEPS = 900
+#HEIGHT_STEPS = 700
+# For smaller knobs
+WIDTH_STEPS = 720
 HEIGHT_STEPS = 500
 
 
