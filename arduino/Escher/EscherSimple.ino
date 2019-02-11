@@ -1,3 +1,13 @@
+// Escher - CNC Etch-a-Sketch
+// Matt Welsh <mdw@mdw.la>
+// https://www.teamsidney.com
+
+// This is a simple, self-contained version of the Escher firmware
+// that draws a specific, hardcoded pattern.
+//
+// Use tools/gcoderip.py to generate a gcode.h file which is compiled
+// into this program to control the steppers.
+
 #include <vector>
  
 #include <Wire.h>
