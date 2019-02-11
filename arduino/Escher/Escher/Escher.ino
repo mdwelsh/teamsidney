@@ -54,6 +54,7 @@ const char BUILD_VERSION[] = ("__E5ch3r__ " __DATE__ " " __TIME__ " ___");
 
 WiFiMulti wifiMulti;
 HTTPClient http;
+WiFiServer server(80);
 
 void flashLed() {
   digitalWrite(LED_BUILTIN, HIGH);
@@ -81,7 +82,7 @@ void setup() {
   wifiMulti.addAP("theonet_EXT", "juneaudog");
 
   xTaskCreate(TaskCheckin, (const char *)"Checkin", 1024*40, NULL, 2, NULL);
-  //xTaskCreate(TaskHTTPServer, (const char *)"WiFi server", 1024*40, NULL, 4, NULL);
+  xTaskCreate(TaskHTTPServer, (const char *)"WiFi server", 1024*40, NULL, 4, NULL);
   //xTaskCreate(TaskEtch, (const char *)"Etch", 1024*40, NULL, 8, NULL);
   Serial.println("Done with setup()");
 }
@@ -147,7 +148,7 @@ void checkin() {
   String payload;
   serializeJson(root, payload);
 
-  Serial.print("[HTTP] PATCH " + url + "\n");
+  Serial.print("[HTTP] POST " + url + "\n");
   Serial.print(payload + "\n");
 
   int httpCode = http.sendRequest("POST", payload);
@@ -165,7 +166,6 @@ void checkin() {
 /* Task to periodically checkin and read new config. */
 void TaskCheckin(void *pvParameters) {
   for (;;) {
-    Serial.println("TaskCheckin running");
     if ((wifiMulti.run() == WL_CONNECTED)) {
       for (int i = 0; i < 5; i++) {
         flashLed();
@@ -174,8 +174,50 @@ void TaskCheckin(void *pvParameters) {
     } else {
       Serial.println("TaskCheckin: Not connected to WiFi");
     }
-    Serial.println("TaskCheckin waiting");
     vTaskDelay(10000 / portTICK_PERIOD_MS);
-    Serial.println("TaskCheckin woke up");
+  }
+}
+
+void handleHttpRequest(WiFiClient client) {
+  Serial.println("HTTP connection from " + client.remoteIP().toString());
+
+  String currentLine = "";
+  while (client.connected()) {
+    if (client.available()) {
+      char c = client.read();
+      Serial.write(c);
+      if (c == '\n') {
+        if (currentLine.length() == 0) {
+          client.println("HTTP/1.1 200 OK");
+          client.println("Content-type: text/html");
+          client.println();
+          client.println("<html><body>You're connected to Escher, isn't this cool?</body></html>");
+          client.println();
+          break;
+        } else {
+          currentLine = "";
+        }
+      } else if (c != '\r') {
+        currentLine += c;
+      }
+    }
+  }
+  // close the connection:
+  client.stop();
+}
+
+void TaskHTTPServer(void *pvParameters) {
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(5000);
+  }
+  server.begin();
+  Serial.println("Started HTTP server on http://" + WiFi.localIP().toString() + ":80/");
+ 
+  for (;;) {
+    WiFiClient client = server.available();
+    if (client) {
+      handleHttpRequest(client);
+    }
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
