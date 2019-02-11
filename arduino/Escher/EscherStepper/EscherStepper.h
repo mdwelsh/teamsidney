@@ -9,8 +9,7 @@
 
 class EscherStepper {
   public:
-  //EscherStepper(AccelStepper& xstepper, AccelStepper& ystepper);
-  EscherStepper(MultiStepper& mstepper);
+  EscherStepper(MultiStepper& mstepper, long backlash_x, long backlash_y);
   void moveTo(long x, long y);
   void push(long x, long y);
   bool run();
@@ -22,7 +21,9 @@ class EscherStepper {
   MultiStepper& _mstepper;
   std::vector<std::pair<long, long>> _pending;
   bool _stopped;
-  long _backlash_x, _backlash_y, _last_x, _last_y, _dir_x, _dir_y;
+  long _backlash_x, _backlash_y,
+       _cur_backlash_x, _cur_backlash_y,
+       _last_x, _last_y, _dir_x, _dir_y;
 };
 
 
