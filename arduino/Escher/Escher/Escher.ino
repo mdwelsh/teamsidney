@@ -2,6 +2,8 @@
 // Matt Welsh <mdw@mdw.la>
 // https://www.teamsidney.com
 
+#define DEBUG_ESP_HTTP_SERVER
+
 #include <vector>
 #include <Wire.h>
 #include <AccelStepper.h>
@@ -9,8 +11,14 @@
 #include <WiFi.h>
 #include <WiFiMulti.h>
 #include <HTTPClient.h>
+#include <WebServer.h>
 #include <ArduinoJson.h>
+#include "FS.h"
+#include "SPIFFS.h"
 #include "EscherStepper.h"
+
+// Format flash filesystem if it can't be mounted, e.g., due to being the first run.
+#define FORMAT_SPIFFS_IF_FAILED true
 
 // Define this to reverse the axes (e.g., if using gears to mate between
 // the steppers and the Etch-a-Sketch).
@@ -54,7 +62,8 @@ const char BUILD_VERSION[] = ("__E5ch3r__ " __DATE__ " " __TIME__ " ___");
 
 WiFiMulti wifiMulti;
 HTTPClient http;
-WiFiServer server(80);
+WebServer server(80);
+File fsUploadFile;
 
 void flashLed() {
   digitalWrite(LED_BUILTIN, HIGH);
@@ -65,13 +74,30 @@ void flashLed() {
 
 // Tasks.
 void TaskCheckin(void *);
-//void TaskHTTPServer(void *);
+void TaskHTTPServer(void *);
 //void TaskEtch(void *);
 
 void setup() {  
   Serial.begin(115200);
   Serial.printf("Starting: %s\n", BUILD_VERSION);
   pinMode(LED_BUILTIN, OUTPUT);
+
+  // Initialize SPIFFS.
+  if (!SPIFFS.begin(FORMAT_SPIFFS_IF_FAILED)) {
+    Serial.println("Warning - SPIFFS Mount Failed");
+  }
+
+  // List current contents of FS.
+  {
+    File root = SPIFFS.open("/");
+    File file = root.openNextFile();
+    while (file) {
+      String fileName = file.name();
+      size_t fileSize = file.size();
+      Serial.printf("FS file %s, size: %d\n", fileName.c_str(), fileSize);
+      file = root.openNextFile();
+    }
+  }
 
   stepper1.setMaxSpeed(MAX_SPEED);
   stepper2.setMaxSpeed(MAX_SPEED);
@@ -163,7 +189,7 @@ void checkin() {
   http.end();
 }
 
-/* Task to periodically checkin and read new config. */
+/* Task to periodically checkin */
 void TaskCheckin(void *pvParameters) {
   for (;;) {
     if ((wifiMulti.run() == WL_CONNECTED)) {
@@ -178,46 +204,76 @@ void TaskCheckin(void *pvParameters) {
   }
 }
 
-void handleHttpRequest(WiFiClient client) {
-  Serial.println("HTTP connection from " + client.remoteIP().toString());
+// HTTP request handlers
 
-  String currentLine = "";
-  while (client.connected()) {
-    if (client.available()) {
-      char c = client.read();
-      Serial.write(c);
-      if (c == '\n') {
-        if (currentLine.length() == 0) {
-          client.println("HTTP/1.1 200 OK");
-          client.println("Content-type: text/html");
-          client.println();
-          client.println("<html><body>You're connected to Escher, isn't this cool?</body></html>");
-          client.println();
-          break;
-        } else {
-          currentLine = "";
-        }
-      } else if (c != '\r') {
-        currentLine += c;
-      }
-    }
-  }
-  // close the connection:
-  client.stop();
+void handleRoot() {
+  Serial.println("Server: handleRoot called");
+  server.send(200, "text/html", "<html><body>You're talking to Escher!</body></html>");
 }
+
+void handleNotFound() {
+  Serial.println("Server: handleNotFound called for " + server.uri());
+  Serial.printf("Method: ");
+  switch (server.method()) {
+    case HTTP_GET: Serial.println("GET"); break;
+    case HTTP_POST: Serial.println("POST"); break;
+    default: Serial.println("other"); break;
+  }
+  Serial.printf("Number of args: %d\n", server.args());
+  for (uint8_t i = 0; i < server.args(); i++) {
+    Serial.printf("  arg[%d] = %s\n", i, server.argName(i).c_str());
+    Serial.println(server.arg(i).c_str());
+  }
+  server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
+  server.send(404, "text/plain", "Not found");
+}
+
+void handleUpload() {
+  Serial.println("handleUpload called");
+
+  HTTPUpload& upload = server.upload();
+  
+  if (upload.status == UPLOAD_FILE_START) {
+    String filename = upload.filename;
+    if (!filename.startsWith("/")) {
+      filename = "/" + filename;
+    }
+    Serial.printf("handleUpload filename: %s\n", filename.c_str());
+    fsUploadFile = SPIFFS.open(filename, "w");
+    filename = String();
+    
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    Serial.printf("handleUpload received %d bytes\n", upload.currentSize);
+    if (fsUploadFile) {
+      fsUploadFile.write(upload.buf, upload.currentSize);
+    }
+  } else if (upload.status == UPLOAD_FILE_END) {
+    if (fsUploadFile) {
+      fsUploadFile.close();
+    }
+    Serial.printf("handleUpload completed write of %d bytes\n", upload.totalSize);
+  }
+}
+
+
+void handleUploadDone() {
+  Serial.println("Upload complete");
+}
+
 
 void TaskHTTPServer(void *pvParameters) {
   while (WiFi.status() != WL_CONNECTED) {
     delay(5000);
   }
+
+  server.on("/", handleRoot);
+  server.on("/upload", HTTP_POST, handleUploadDone, handleUpload);
+  server.onNotFound(handleNotFound);
   server.begin();
+
   Serial.println("Started HTTP server on http://" + WiFi.localIP().toString() + ":80/");
  
   for (;;) {
-    WiFiClient client = server.available();
-    if (client) {
-      handleHttpRequest(client);
-    }
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    server.handleClient();
   }
 }
