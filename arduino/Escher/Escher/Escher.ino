@@ -65,6 +65,9 @@ HTTPClient http;
 WebServer server(80);
 File fsUploadFile;
 
+enum EtchState { STATE_IDLE, STATE_READY, STATE_ETCHING, STATE_PAUSED };
+EtchState etchState = STATE_IDLE;
+
 void flashLed() {
   digitalWrite(LED_BUILTIN, HIGH);
   delay(100);
@@ -86,18 +89,7 @@ void setup() {
   if (!SPIFFS.begin(FORMAT_SPIFFS_IF_FAILED)) {
     Serial.println("Warning - SPIFFS Mount Failed");
   }
-
-  // List current contents of FS.
-  {
-    File root = SPIFFS.open("/");
-    File file = root.openNextFile();
-    while (file) {
-      String fileName = file.name();
-      size_t fileSize = file.size();
-      Serial.printf("FS file %s, size: %d\n", fileName.c_str(), fileSize);
-      file = root.openNextFile();
-    }
-  }
+  showFilesystemContents();
 
   stepper1.setMaxSpeed(MAX_SPEED);
   stepper2.setMaxSpeed(MAX_SPEED);
@@ -200,7 +192,18 @@ void TaskCheckin(void *pvParameters) {
     } else {
       Serial.println("TaskCheckin: Not connected to WiFi");
     }
-    vTaskDelay(10000 / portTICK_PERIOD_MS);
+    vTaskDelay(60000 / portTICK_PERIOD_MS);
+  }
+}
+
+void showFilesystemContents() {
+  File root = SPIFFS.open("/");
+  File file = root.openNextFile();
+  while (file) {
+    String fileName = file.name();
+    size_t fileSize = file.size();
+    Serial.printf("FS file %s, size: %d\n", fileName.c_str(), fileSize);
+    file = root.openNextFile();
   }
 }
 
@@ -230,6 +233,10 @@ void handleNotFound() {
 
 void handleUpload() {
   Serial.println("handleUpload called");
+  if (etchState != STATE_IDLE) {
+    Serial.println("Warning - cannot accept upload unless idle.");
+    return;
+  }
 
   HTTPUpload& upload = server.upload();
   
@@ -255,19 +262,76 @@ void handleUpload() {
   }
 }
 
-
 void handleUploadDone() {
-  Serial.println("Upload complete");
+  Serial.println("handleUploadDone called");
+  showFilesystemContents();
+  server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
+
+  if (etchState == STATE_IDLE) {
+    etchState = STATE_READY;
+    server.send(200, "text/plain", "Thanks for the file.");
+  } else {
+    server.send(500, "text/plain", "Upload rejected - state is not idle");
+  }
 }
 
+void handleOptions() {
+  Serial.println("handleOptions called");
+  server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
+  server.send(200, "text/plain", "OK");
+}
 
+void handleEtch() {
+  Serial.println("handleEtch called");
+  server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
+
+  // First check that we are ready.
+  if (!(etchState == STATE_READY || etchState == STATE_PAUSED)) {
+    server.send(500, "text/plain", "State must be ready or paused to start etching");
+  }
+
+  // First check if we got an upload.
+  bool exists = false;
+  File file = SPIFFS.open("/cmddata.txt", "r");
+  if (!file.isDirectory()) {
+    exists = true;
+  }
+  file.close();
+  if (exists) {
+    server.send(200, "text/plain", "Drawing started.");
+    etchState = STATE_ETCHING;
+    // TODO(mdw) - Kick off etching task.
+  } else {
+    server.send(500, "text/plain", "No cmddata.txt found -- use /upload first");
+    etchState = STATE_IDLE;
+  }
+}
+
+void handlePause() {
+  Serial.println("handlePause called");
+  server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
+
+  // First check that we are etching.
+  if (etchState != STATE_ETCHING) {
+    server.send(500, "text/plain", "State must be etching to pause");
+  } else {
+    server.send(200, "text/plain", "Pausing");
+    etchState = STATE_PAUSED;
+    // TODO(mdw) - Pause etching task.
+  }
+}
+
+// Main HTTP server loop.
 void TaskHTTPServer(void *pvParameters) {
   while (WiFi.status() != WL_CONNECTED) {
     delay(5000);
   }
 
   server.on("/", handleRoot);
+  server.on("/upload", HTTP_OPTIONS, handleOptions);
   server.on("/upload", HTTP_POST, handleUploadDone, handleUpload);
+  server.on("/etch", handleEtch);
+  server.on("/pause", handlePause);
   server.onNotFound(handleNotFound);
   server.begin();
 
