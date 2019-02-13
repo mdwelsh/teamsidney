@@ -233,8 +233,8 @@ void handleNotFound() {
 
 void handleUpload() {
   Serial.println("handleUpload called");
-  if (etchState != STATE_IDLE) {
-    Serial.println("Warning - cannot accept upload unless idle.");
+  if (etchState == STATE_ETCHING) {
+    Serial.println("Warning - cannot accept upload while etching.");
     return;
   }
 
@@ -267,11 +267,11 @@ void handleUploadDone() {
   showFilesystemContents();
   server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
 
-  if (etchState == STATE_IDLE) {
+  if (etchState == STATE_ETCHING) {
+    server.send(500, "text/plain", "Upload rejected - already etching");
+  } else {
     etchState = STATE_READY;
     server.send(200, "text/plain", "Thanks for the file.");
-  } else {
-    server.send(500, "text/plain", "Upload rejected - state is not idle");
   }
 }
 
