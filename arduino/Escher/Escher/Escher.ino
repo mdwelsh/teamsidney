@@ -107,7 +107,7 @@ void setup() {
 
   // Spin up tasks.
   xTaskCreate(TaskCheckin, (const char *)"Checkin", 1024*40, NULL, 2, NULL);
-  //xTaskCreate(TaskHTTPServer, (const char *)"WiFi server", 1024*40, NULL, 4, &httpTaskHandle);
+  xTaskCreate(TaskHTTPServer, (const char *)"WiFi server", 1024*40, NULL, 2, &httpTaskHandle);
   //xTaskCreate(TaskEtch, (const char *)"Etch", 1024*40, NULL, 8, &etchTaskHandle);
   Serial.println("Done with setup()");
 }
@@ -182,6 +182,7 @@ void checkin() {
   Serial.print("[HTTP] POST " + url + "\n");
   Serial.print(payload + "\n");
 
+#if 0 // XXX MDW HACKING
   int httpCode = http.sendRequest("POST", payload);
   if (httpCode == 200) {
     Serial.printf("[HTTP] Checkin response code: %d\n", httpCode);
@@ -191,6 +192,7 @@ void checkin() {
     Serial.printf("[HTTP] failed, status code %d: %s\n",
       httpCode, http.errorToString(httpCode).c_str());
   }
+#endif
   http.end();
 }
 
@@ -351,7 +353,9 @@ void TaskHTTPServer(void *pvParameters) {
   Serial.println("Started HTTP server on http://" + WiFi.localIP().toString() + ":80/");
  
   for (;;) {
+    Serial.println("HTTP server polling");
     server.handleClient();
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
 
