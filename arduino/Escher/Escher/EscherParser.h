@@ -10,19 +10,19 @@
 
 class EscherParser {
   public:
-  EscherParser(EscherStepper &escher, const char *filename) :
-    escher_(escher),
-    fname_(filename),
-    stopped_(false),
-    cIndex_(0) {}
+  EscherParser(EscherStepper &escher) :
+    escher_(escher), stopped_(false), cIndex_(0) {}
 
-  bool Init();
+  bool Open(const char *filename);
   bool Feed();
 
   private:
-  const char *fname_;
+  bool readCommand();
+  bool processCommand();
+  
   File file_;
   EscherStepper& escher_;
+  bool stopped_;
   char curCommand_[MAX_COMMAND_LINE_LENGTH];
   char cIndex_;
 };

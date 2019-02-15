@@ -16,6 +16,7 @@
 #include "FS.h"
 #include "SPIFFS.h"
 #include "EscherStepper.h"
+#include "EscherParser.h"
 
 // Format flash filesystem if it can't be mounted, e.g., due to being the first run.
 #define FORMAT_SPIFFS_IF_FAILED true
@@ -56,6 +57,7 @@ AccelStepper stepper1(forwardstep1, backwardstep1);
 AccelStepper stepper2(forwardstep2, backwardstep2);
 MultiStepper mstepper;
 EscherStepper escher(mstepper, BACKLASH_X, BACKLASH_Y);
+EscherParser parser(escher);
 
 // We use some magic strings in this constant to ensure that we can easily strip it out of the binary.
 const char BUILD_VERSION[] = ("__E5ch3r__ " __DATE__ " " __TIME__ " ___");
@@ -105,14 +107,20 @@ void setup() {
 
   // Spin up tasks.
   xTaskCreate(TaskCheckin, (const char *)"Checkin", 1024*40, NULL, 2, NULL);
-  xTaskCreate(TaskHTTPServer, (const char *)"WiFi server", 1024*40, NULL, 4, &httpTaskHandle);
-  xTaskCreate(TaskEtch, (const char *)"Etch", 1024*40, NULL, 8, &etchTaskHandle);
+  //xTaskCreate(TaskHTTPServer, (const char *)"WiFi server", 1024*40, NULL, 4, &httpTaskHandle);
+  //xTaskCreate(TaskEtch, (const char *)"Etch", 1024*40, NULL, 8, &etchTaskHandle);
   Serial.println("Done with setup()");
 }
 
 void loop() {
-  // Do nothing.
-  delay(60000);
+  // XXX MDW HACKING
+  if (!escher.run()) {
+    //Serial.println("MDW: Pushing another square");
+    escher.push(0, 0);
+    escher.push(0, 200);
+    escher.push(200, 200);
+    escher.push(200, 0);
+  }
 }
 
 // Checkin to Firebase.
@@ -197,7 +205,7 @@ void TaskCheckin(void *pvParameters) {
     } else {
       Serial.println("TaskCheckin: Not connected to WiFi");
     }
-    vTaskDelay(60000 / portTICK_PERIOD_MS);
+    vTaskDelay(10000 / portTICK_PERIOD_MS);
   }
 }
 
@@ -347,17 +355,27 @@ void TaskHTTPServer(void *pvParameters) {
   }
 }
 
-void startEtching() {
+bool startEtching() {
   Serial.println("Starting etching...");
-}
-
-void resumeEtching() {
-  Serial.println("Resuming etching...");
+  return parser.Open("/cmddata.txt");
 }
 
 bool runEtcher() {
   Serial.println("runEtcher called");
   return true;
+
+#if 0 // XXX MDW HACKING
+  // First see if the Escher controller is ready for more.
+  if (escher.run()) {
+    Serial.println("escher.run() returning true");
+    return true;
+  }
+
+  // Feed more commands to Escher. Returns false when file is complete.
+  bool ret = parser.Feed();
+  Serial.printf("parser.Feed() returning %s\n", ret?"true":"false");
+  return ret;
+#endif
 }
 
 // Etcher task.
@@ -374,12 +392,9 @@ void TaskEtch(void *pvParameters) {
         if (notificationVal & NOTIFY_START) {
           // Got notification - start or resume based on state.
           if (curState == STATE_IDLE) {
-            curState = STATE_ETCHING;
             startEtching();
-          } else {
-            curState = STATE_ETCHING;
-            resumeEtching();
           }
+          curState = STATE_ETCHING;
         }
       }
 

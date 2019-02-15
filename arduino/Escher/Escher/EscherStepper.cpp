@@ -56,6 +56,7 @@ void EscherStepper::moveTo(long x, long y) {
     _dir_y = diry;
   }
 
+  //Serial.printf("EscherStepper: moving to %d %d\n", target[0], target[1]);
   _mstepper.moveTo(target);
 }
 
@@ -69,10 +70,14 @@ void EscherStepper::push(long x, long y) {
 // Returns false if all have stopped.
 bool EscherStepper::run() {
   if (!_mstepper.run()) {
+    //Serial.println("EscherStepper: Steppers have stopped");
     _stopped = true;
+  } else {
+    //Serial.println("EscherStepper: Steppers still running");
   }
   if (_stopped) {
     if (!_pending.empty()) {
+      //Serial.println("EscherStepper: Got another waypoint");
       // Pick next waypoint.
       _stopped = false;
       std::pair<long, long> front = _pending.front();
@@ -80,5 +85,6 @@ bool EscherStepper::run() {
       moveTo(front.first, front.second);
     }
   }
+  //Serial.printf("EscherStepper.run() returning %s\n", (!_stopped)?"true":"false");
   return !_stopped;
 }

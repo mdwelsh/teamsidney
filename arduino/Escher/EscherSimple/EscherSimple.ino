@@ -145,8 +145,8 @@ int curPoint = 0;
 int curLen = 10;
 
 void setup() {  
-  Serial.begin(2000000);
-  //Serial.printf("Starting\n");
+  Serial.begin(115200);
+  Serial.println("Starting");
   stepper1.setMaxSpeed(MAX_SPEED);
   stepper2.setMaxSpeed(MAX_SPEED);
   mstepper.addStepper(stepper1);
@@ -154,8 +154,10 @@ void setup() {
   AFMS.begin(); // Start the bottom shield
 
 #ifdef USE_GCODE
+  Serial.println("Pushing Gcode");
   escher.push(_GCODE_POINTS[0].first, _GCODE_POINTS[0].second);
 #else
+  Serial.println("Doing pre-programmed sequence");
   //grid(escher, 100, 4, 3);
   square(escher, curLen);
   //star(escher, 500);
@@ -172,7 +174,7 @@ void loop() {
 #ifdef USE_GCODE
     curPoint++;
     if (curPoint < GCODE_NUM_POINTS) {
-      //Serial.printf("Escher is idle, pushing point %d/%d\n", curPoint+1, GCODE_NUM_POINTS);
+      Serial.printf("Escher is idle, pushing point %d/%d\n", curPoint+1, GCODE_NUM_POINTS);
       escher.push(_GCODE_POINTS[curPoint].first, _GCODE_POINTS[curPoint].second);
     }
 #else
