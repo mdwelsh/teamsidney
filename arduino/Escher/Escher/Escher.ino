@@ -65,9 +65,6 @@ HTTPClient http;
 WebServer server(80);
 File fsUploadFile;
 
-enum EtchState { STATE_IDLE, STATE_READY, STATE_ETCHING, STATE_PAUSED };
-EtchState etchState = STATE_IDLE;
-
 void flashLed() {
   digitalWrite(LED_BUILTIN, HIGH);
   delay(100);
@@ -75,10 +72,17 @@ void flashLed() {
   delay(100);
 }
 
+enum EtchState { STATE_IDLE, STATE_READY, STATE_ETCHING, STATE_PAUSED };
+EtchState etchState = STATE_IDLE;
+#define NOTIFY_START 0x1
+#define NOTIFY_PAUSE 0x2
+#define NOTIFY_ERROR 0x4
+
 // Tasks.
 void TaskCheckin(void *);
 void TaskHTTPServer(void *);
-//void TaskEtch(void *);
+void TaskEtch(void *);
+TaskHandle_t httpTaskHandle, etchTaskHandle;
 
 void setup() {  
   Serial.begin(115200);
@@ -99,9 +103,10 @@ void setup() {
 
   wifiMulti.addAP("theonet_EXT", "juneaudog");
 
+  // Spin up tasks.
   xTaskCreate(TaskCheckin, (const char *)"Checkin", 1024*40, NULL, 2, NULL);
-  xTaskCreate(TaskHTTPServer, (const char *)"WiFi server", 1024*40, NULL, 4, NULL);
-  //xTaskCreate(TaskEtch, (const char *)"Etch", 1024*40, NULL, 8, NULL);
+  xTaskCreate(TaskHTTPServer, (const char *)"WiFi server", 1024*40, NULL, 4, &httpTaskHandle);
+  xTaskCreate(TaskEtch, (const char *)"Etch", 1024*40, NULL, 8, &etchTaskHandle);
   Serial.println("Done with setup()");
 }
 
@@ -300,7 +305,7 @@ void handleEtch() {
   if (exists) {
     server.send(200, "text/plain", "Drawing started.");
     etchState = STATE_ETCHING;
-    // TODO(mdw) - Kick off etching task.
+    xTaskNotify(etchTaskHandle, NOTIFY_START, eSetBits);
   } else {
     server.send(500, "text/plain", "No cmddata.txt found -- use /upload first");
     etchState = STATE_IDLE;
@@ -317,7 +322,7 @@ void handlePause() {
   } else {
     server.send(200, "text/plain", "Pausing");
     etchState = STATE_PAUSED;
-    // TODO(mdw) - Pause etching task.
+    xTaskNotify(etchTaskHandle, NOTIFY_PAUSE, eSetBits);
   }
 }
 
@@ -339,5 +344,62 @@ void TaskHTTPServer(void *pvParameters) {
  
   for (;;) {
     server.handleClient();
+  }
+}
+
+void startEtching() {
+  Serial.println("Starting etching...");
+}
+
+void resumeEtching() {
+  Serial.println("Resuming etching...");
+}
+
+bool runEtcher() {
+  Serial.println("runEtcher called");
+  return true;
+}
+
+// Etcher task.
+void TaskEtch(void *pvParameters) {
+  // Note that curState is local to the TaskEtch task -- we do not allow concurrent modification.
+  EtchState curState = STATE_IDLE;
+  uint32_t notificationVal;
+  
+  for (;;) {
+    if (curState == STATE_IDLE || curState == STATE_PAUSED) {
+      // Waiting for notification to start or resume etching.
+      Serial.println("TaskEtch: Idle, waiting for notification...");
+      if (xTaskNotifyWait(0x0, 0xffffffff, &notificationVal, portMAX_DELAY) == pdTRUE) {
+        if (notificationVal & NOTIFY_START) {
+          // Got notification - start or resume based on state.
+          if (curState == STATE_IDLE) {
+            curState = STATE_ETCHING;
+            startEtching();
+          } else {
+            curState = STATE_ETCHING;
+            resumeEtching();
+          }
+        }
+      }
+
+    } else if (curState == STATE_ETCHING) {
+      // Run etcher.
+      Serial.println("TaskEtch: Running etcher...");
+      if (!runEtcher()) {
+        // Etching finished.
+        Serial.println("TaskEtch: Done etching.");
+        curState = STATE_IDLE;
+        // Notify HTTP task so it knows we're done.
+        xTaskNotify(httpTaskHandle, 0, eNoAction);
+      }
+      // Check for pause condition.
+      if (xTaskNotifyWait(0x0, 0xffffffff, &notificationVal, 0) == pdTRUE) {
+        if (notificationVal & NOTIFY_PAUSE) {
+          Serial.println("TaskEtch: Pausing.");
+          curState = STATE_PAUSED;
+        }
+      }
+    }
   }
 }

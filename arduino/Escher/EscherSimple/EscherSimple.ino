@@ -21,6 +21,9 @@
 #include "gcode.h"
 #endif
 
+#define BACKLASH_X 10
+#define BACKLASH_Y 15
+
 // Define this to reverse the axes (e.g., if using gears to mate between
 // the steppers and the Etch-a-Sketch).
 #define REVERSE_AXES
@@ -53,7 +56,7 @@ void backwardstep2() {
 AccelStepper stepper1(forwardstep1, backwardstep1);
 AccelStepper stepper2(forwardstep2, backwardstep2);
 MultiStepper mstepper;
-EscherStepper escher(mstepper);
+EscherStepper escher(mstepper, BACKLASH_X, BACKLASH_Y);
 
 void square(EscherStepper& e, int side) {
   e.push(side, 0);
