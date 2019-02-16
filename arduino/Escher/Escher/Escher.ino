@@ -74,17 +74,8 @@ void flashLed() {
   delay(100);
 }
 
-enum EtchState { STATE_IDLE, STATE_READY, STATE_ETCHING, STATE_PAUSED };
-EtchState etchState = STATE_IDLE;
-#define NOTIFY_START 0x1
-#define NOTIFY_PAUSE 0x2
-#define NOTIFY_ERROR 0x4
-
-// Tasks.
-void TaskCheckin(void *);
-void TaskHTTPServer(void *);
-void TaskEtch(void *);
-TaskHandle_t httpTaskHandle, etchTaskHandle;
+enum EtchState { STATE_INITIALIZING, STATE_IDLE, STATE_READY, STATE_ETCHING, STATE_PAUSED };
+EtchState etchState = STATE_INITIALIZING;
 
 void setup() {  
   Serial.begin(115200);
@@ -103,24 +94,18 @@ void setup() {
   mstepper.addStepper(stepper2);
   AFMS.begin(); // Start the bottom shield
 
+  // Bring up WiFi.
   wifiMulti.addAP("theonet_EXT", "juneaudog");
 
-  // Spin up tasks.
-  xTaskCreate(TaskCheckin, (const char *)"Checkin", 1024*40, NULL, 2, NULL);
-  xTaskCreate(TaskHTTPServer, (const char *)"WiFi server", 1024*40, NULL, 2, &httpTaskHandle);
-  //xTaskCreate(TaskEtch, (const char *)"Etch", 1024*40, NULL, 8, &etchTaskHandle);
-  Serial.println("Done with setup()");
-}
+  // Configure HTTP server.
+  server.on("/", handleRoot);
+  server.on("/upload", HTTP_OPTIONS, handleOptions);
+  server.on("/upload", HTTP_POST, handleUploadDone, handleUpload);
+  server.on("/etch", handleEtch);
+  server.on("/pause", handlePause);
+  server.onNotFound(handleNotFound);
 
-void loop() {
-  // XXX MDW HACKING
-  if (!escher.run()) {
-    //Serial.println("MDW: Pushing another square");
-    escher.push(0, 0);
-    escher.push(0, 200);
-    escher.push(200, 200);
-    escher.push(200, 0);
-  }
+  Serial.println("Done with setup()");
 }
 
 // Checkin to Firebase.
@@ -182,7 +167,6 @@ void checkin() {
   Serial.print("[HTTP] POST " + url + "\n");
   Serial.print(payload + "\n");
 
-#if 0 // XXX MDW HACKING
   int httpCode = http.sendRequest("POST", payload);
   if (httpCode == 200) {
     Serial.printf("[HTTP] Checkin response code: %d\n", httpCode);
@@ -192,23 +176,7 @@ void checkin() {
     Serial.printf("[HTTP] failed, status code %d: %s\n",
       httpCode, http.errorToString(httpCode).c_str());
   }
-#endif
   http.end();
-}
-
-/* Task to periodically checkin */
-void TaskCheckin(void *pvParameters) {
-  for (;;) {
-    if ((wifiMulti.run() == WL_CONNECTED)) {
-      for (int i = 0; i < 5; i++) {
-        flashLed();
-      }
-      checkin();
-    } else {
-      Serial.println("TaskCheckin: Not connected to WiFi");
-    }
-    vTaskDelay(10000 / portTICK_PERIOD_MS);
-  }
 }
 
 void showFilesystemContents() {
@@ -222,7 +190,7 @@ void showFilesystemContents() {
   }
 }
 
-// HTTP request handlers
+// HTTP request handlers.
 
 void handleRoot() {
   Serial.println("Server: handleRoot called");
@@ -305,17 +273,9 @@ void handleEtch() {
     server.send(500, "text/plain", "State must be ready or paused to start etching");
   }
 
-  // First check if we got an upload.
-  bool exists = false;
-  File file = SPIFFS.open("/cmddata.txt", "r");
-  if (!file.isDirectory()) {
-    exists = true;
-  }
-  file.close();
-  if (exists) {
-    server.send(200, "text/plain", "Drawing started.");
+  if (parser.Open("/cmddata.txt")) {
+    server.send(200, "text/plain", "Etching started.");
     etchState = STATE_ETCHING;
-    xTaskNotify(etchTaskHandle, NOTIFY_START, eSetBits);
   } else {
     server.send(500, "text/plain", "No cmddata.txt found -- use /upload first");
     etchState = STATE_IDLE;
@@ -332,93 +292,48 @@ void handlePause() {
   } else {
     server.send(200, "text/plain", "Pausing");
     etchState = STATE_PAUSED;
-    xTaskNotify(etchTaskHandle, NOTIFY_PAUSE, eSetBits);
   }
-}
-
-// Main HTTP server loop.
-void TaskHTTPServer(void *pvParameters) {
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(5000);
-  }
-
-  server.on("/", handleRoot);
-  server.on("/upload", HTTP_OPTIONS, handleOptions);
-  server.on("/upload", HTTP_POST, handleUploadDone, handleUpload);
-  server.on("/etch", handleEtch);
-  server.on("/pause", handlePause);
-  server.onNotFound(handleNotFound);
-  server.begin();
-
-  Serial.println("Started HTTP server on http://" + WiFi.localIP().toString() + ":80/");
- 
-  for (;;) {
-    Serial.println("HTTP server polling");
-    server.handleClient();
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
-  }
-}
-
-bool startEtching() {
-  Serial.println("Starting etching...");
-  return parser.Open("/cmddata.txt");
 }
 
 bool runEtcher() {
-  Serial.println("runEtcher called");
-  return true;
-
-#if 0 // XXX MDW HACKING
   // First see if the Escher controller is ready for more.
   if (escher.run()) {
-    Serial.println("escher.run() returning true");
     return true;
   }
 
   // Feed more commands to Escher. Returns false when file is complete.
-  bool ret = parser.Feed();
-  Serial.printf("parser.Feed() returning %s\n", ret?"true":"false");
-  return ret;
-#endif
+  return parser.Feed();
 }
 
-// Etcher task.
-void TaskEtch(void *pvParameters) {
-  // Note that curState is local to the TaskEtch task -- we do not allow concurrent modification.
-  EtchState curState = STATE_IDLE;
-  uint32_t notificationVal;
-  
-  for (;;) {
-    if (curState == STATE_IDLE || curState == STATE_PAUSED) {
-      // Waiting for notification to start or resume etching.
-      Serial.println("TaskEtch: Idle, waiting for notification...");
-      if (xTaskNotifyWait(0x0, 0xffffffff, &notificationVal, portMAX_DELAY) == pdTRUE) {
-        if (notificationVal & NOTIFY_START) {
-          // Got notification - start or resume based on state.
-          if (curState == STATE_IDLE) {
-            startEtching();
-          }
-          curState = STATE_ETCHING;
-        }
-      }
+// Main loop.
+void loop() {
+  unsigned long lastCheckin = 0;
 
-    } else if (curState == STATE_ETCHING) {
-      // Run etcher.
-      Serial.println("TaskEtch: Running etcher...");
-      if (!runEtcher()) {
-        // Etching finished.
-        Serial.println("TaskEtch: Done etching.");
-        curState = STATE_IDLE;
-        // Notify HTTP task so it knows we're done.
-        xTaskNotify(httpTaskHandle, 0, eNoAction);
-      }
-      // Check for pause condition.
-      if (xTaskNotifyWait(0x0, 0xffffffff, &notificationVal, 0) == pdTRUE) {
-        if (notificationVal & NOTIFY_PAUSE) {
-          Serial.println("TaskEtch: Pausing.");
-          curState = STATE_PAUSED;
-        }
-      }
+  if (etchState == STATE_INITIALIZING) {
+    if (wifiMulti.run() != WL_CONNECTED) {
+      Serial.println("Waiting for WiFi connection...");
+      delay(1000);
+      return;
+    } else {
+      server.begin();
+      Serial.println("Started HTTP server on http://" + WiFi.localIP().toString() + ":80/");
+      etchState = STATE_IDLE;
     }
+    
+  } else if (etchState == STATE_IDLE || etchState == STATE_READY || etchState == STATE_PAUSED) {
+    // Do periodic checkins.
+    if (millis() - lastCheckin >= 10000) {
+      lastCheckin = millis();
+      checkin();
+    }
+    server.handleClient();   
+     
+  } else if (etchState == STATE_ETCHING) {
+    // Avoid doing checkins; run etcher but poll for HTTP pause commands.
+    if (!runEtcher()) {
+      Serial.println("Etcher completed.");
+      etchState = STATE_IDLE;
+    }
+    server.handleClient();
   }
 }

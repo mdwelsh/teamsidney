@@ -13,11 +13,10 @@ bool EscherParser::Open(const char *filename) {
 bool EscherParser::Feed() {
   // Read a line from the command file.
   if (!readCommand()) {
-    Serial.println("EscherParser: Command file done");
     return false;
   }
   if (!processCommand()) {
-    Serial.println("EscherParser: Unable to process command");
+    Serial.println("WARNING - Unable to process command");
     Serial.println(curCommand_);
     // Ignore it
   }
@@ -60,10 +59,9 @@ bool EscherParser::readCommand() {
 bool EscherParser::processCommand() {
   char* command = strtok(curCommand_, " \n");
   if (!strcmp(command, "START")) {
-    Serial.println("Got START command");
+    // Do nothing.
     
   } else if (!strcmp(command, "MOVE")) {
-    Serial.println("Got MOVE command");
     char *xs = strtok(NULL, " \n");
     char *ys = strtok(NULL, " \n");
     if (xs == NULL || ys == NULL) {
@@ -76,7 +74,7 @@ bool EscherParser::processCommand() {
     escher_.push(x, y);
     
   } else if (!strcmp(command, "END")) {
-    Serial.println("Got END command");
+    // Do nothing.
     
   } else {
     Serial.printf("WARNING - Unrecognized command token %s\n", command);
