@@ -269,12 +269,16 @@ void handleEtch() {
   server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
 
   // First check that we are ready.
-  if (!(etchState == STATE_READY || etchState == STATE_PAUSED)) {
-    server.send(500, "text/plain", "State must be ready or paused to start etching");
+  if (!(etchState == STATE_READY)) {
+    server.send(500, "text/plain", "State must be ready to start etching");
   }
 
   if (parser.Open("/cmddata.txt")) {
     server.send(200, "text/plain", "Etching started.");
+    stepper1.setCurrentPosition(0);
+    stepper2.setCurrentPosition(0);
+    stepper1.enableOutputs();
+    stepper2.enableOutputs();
     etchState = STATE_ETCHING;
   } else {
     server.send(500, "text/plain", "No cmddata.txt found -- use /upload first");
@@ -291,8 +295,26 @@ void handlePause() {
     server.send(500, "text/plain", "State must be etching to pause");
   } else {
     server.send(200, "text/plain", "Pausing");
+    myStepper1->release();
+    myStepper2->release();
+    stepper1.disableOutputs();
+    stepper2.disableOutputs();
     etchState = STATE_PAUSED;
   }
+}
+
+void handleResume() {
+  Serial.println("handleResume called");
+  server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
+
+  if (etchState != STATE_PAUSED) {
+    server.send(500, "text/plain", "State must be paused to resume etching");
+  } else {
+    server.send(200, "text/plain", "Resuming");
+    stepper1.enableOutputs();
+    stepper2.enableOutputs();
+    etchState = STATE_ETCHING;
+  } 
 }
 
 bool runEtcher() {
@@ -332,6 +354,10 @@ void loop() {
     // Avoid doing checkins; run etcher but poll for HTTP pause commands.
     if (!runEtcher()) {
       Serial.println("Etcher completed.");
+      myStepper1->release();
+      myStepper2->release();
+      stepper1.disableOutputs();
+      stepper2.disableOutputs();
       etchState = STATE_IDLE;
     }
     server.handleClient();
