@@ -103,6 +103,9 @@ void setup() {
   server.on("/upload", HTTP_POST, handleUploadDone, handleUpload);
   server.on("/etch", handleEtch);
   server.on("/pause", handlePause);
+  server.on("/stop", handleStop);
+  server.on("/resume", handleResume);
+  server.on("/ping", handlePing);
   server.onNotFound(handleNotFound);
 
   Serial.println("Done with setup()");
@@ -170,8 +173,6 @@ void checkin() {
   int httpCode = http.sendRequest("POST", payload);
   if (httpCode == 200) {
     Serial.printf("[HTTP] Checkin response code: %d\n", httpCode);
-    //String payload = http.getString();
-    //Serial.println(payload);
   } else {
     Serial.printf("[HTTP] failed, status code %d: %s\n",
       httpCode, http.errorToString(httpCode).c_str());
@@ -286,6 +287,23 @@ void handleEtch() {
   }
 }
 
+void handleStop() {
+  Serial.println("handleStop called");
+  server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
+
+  // First check that we are etching.
+  if (etchState != STATE_ETCHING && etchState != STATE_PAUSED) {
+    server.send(500, "text/plain", "State must be etching or paused to stop");
+  } else {
+    server.send(200, "text/plain", "Stopping");
+    myStepper1->release();
+    myStepper2->release();
+    stepper1.disableOutputs();
+    stepper2.disableOutputs();
+    etchState = STATE_IDLE;
+  }
+}
+
 void handlePause() {
   Serial.println("handlePause called");
   server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
@@ -315,6 +333,44 @@ void handleResume() {
     stepper2.enableOutputs();
     etchState = STATE_ETCHING;
   } 
+}
+
+void handlePing() {
+  Serial.println("handlePing called");
+  server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
+
+  StaticJsonDocument<1024> pingResponseDoc;
+  JsonObject root = pingResponseDoc.to<JsonObject>();
+
+  root["mac"] = WiFi.macAddress();
+  root["ip"] = WiFi.localIP().toString();
+  root["rssi"] = WiFi.RSSI();
+  root["backlash_x"] = String(BACKLASH_X);
+  root["backlash_y"] = String(BACKLASH_Y);
+
+  switch (etchState) {
+    case STATE_INITIALIZING:
+      root["state"] = "initializing";
+      break;
+    case STATE_IDLE:
+      root["state"] = "idle";
+      break;
+    case STATE_READY:
+      root["state"] = "ready";
+      break;
+    case STATE_PAUSED:
+      root["state"] = "paused";
+      break;
+    case STATE_ETCHING:
+      root["state"] = "etching";
+      break;
+    default:
+      root["state"] = "unknown";
+      break;
+  }
+  String payload;
+  serializeJson(root, payload);
+  server.send(200, "application/json", payload);
 }
 
 bool runEtcher() {
