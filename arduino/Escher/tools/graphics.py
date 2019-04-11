@@ -513,7 +513,7 @@ class GraphicsObject:
         if canvas and not canvas.isClosed():
             trans = canvas.trans
             if trans:
-                x = dx/ trans.xscale 
+                x = dx / trans.xscale 
                 y = -dy / trans.yscale
             else:
                 x = dx
@@ -866,7 +866,7 @@ class Entry(GraphicsObject):
             raise GraphicsError(BAD_OPTION)
 
     def setTextColor(self, color):
-        self.color=color
+        self.color = color
         if self.entry:
             self.entry.config(fg=color)
 
@@ -942,7 +942,7 @@ class Image(GraphicsObject):
         """Sets pixel (x,y) to the given color
         
         """
-        self.img.put("{" + color +"}", (x, y))
+        self.img.put("{" + color + "}", (x, y))
         
 
     def save(self, filename):
