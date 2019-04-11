@@ -3,6 +3,7 @@
 // https://www.teamsidney.com
 
 #define DEBUG_ESP_HTTP_SERVER
+//#define DEBUG_LEDS
 
 #include <vector>
 #include <Wire.h>
@@ -18,9 +19,6 @@
 #include "EscherStepper.h"
 #include "EscherParser.h"
 
-// Format flash filesystem if it can't be mounted, e.g., due to being the first run.
-#define FORMAT_SPIFFS_IF_FAILED true
-
 // Define this to reverse the axes (e.g., if using gears to mate between
 // the steppers and the Etch-a-Sketch).
 #define REVERSE_AXES
@@ -33,8 +31,10 @@
 #endif
 
 // These should be calibrated for each device.
-#define BACKLASH_X 10
-#define BACKLASH_Y 15
+//#define BACKLASH_X 10
+//#define BACKLASH_Y 15
+#define BACKLASH_X 3
+#define BACKLASH_Y 3
 #define MAX_SPEED 100.0
 
 Adafruit_MotorShield AFMS = Adafruit_MotorShield();
@@ -67,14 +67,16 @@ HTTPClient http;
 WebServer server(80);
 File fsUploadFile;
 
-void flashLed() {
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(100);
-  digitalWrite(LED_BUILTIN, LOW);
-  delay(100);
+void flashLed(int count) {
+  for (int i = 0; i < count; i++) {
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(150);
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(150);
+  }
 }
 
-enum EtchState { STATE_INITIALIZING, STATE_IDLE, STATE_READY, STATE_ETCHING, STATE_PAUSED };
+enum EtchState { STATE_INITIALIZING = 0, STATE_IDLE, STATE_READY, STATE_ETCHING, STATE_PAUSED };
 EtchState etchState = STATE_INITIALIZING;
 
 void setup() {  
@@ -82,9 +84,12 @@ void setup() {
   Serial.printf("Starting: %s\n", BUILD_VERSION);
   pinMode(LED_BUILTIN, OUTPUT);
 
-  // Initialize SPIFFS.
-  if (!SPIFFS.begin(FORMAT_SPIFFS_IF_FAILED)) {
-    Serial.println("Warning - SPIFFS Mount Failed");
+  // Initialize SPIFFS. We always format.
+  if (!SPIFFS.format()) {
+    Serial.println("Warning - SPIFFS format failed");  
+  }
+  if (!SPIFFS.begin(true)) {
+    Serial.println("Warning - SPIFFS mount failed");
   }
   showFilesystemContents();
 
@@ -384,8 +389,16 @@ bool runEtcher() {
 }
 
 // Main loop.
+unsigned long lastCheckin = 0;
+unsigned long lastBlink = 0;
+
 void loop() {
-  unsigned long lastCheckin = 0;
+#ifdef DEFINE_LEDS
+  if (millis() - lastBlink >= 8000) {
+    lastBlink = millis();
+    flashLed(3 + etchState);
+  }
+#endif
 
   if (etchState == STATE_INITIALIZING) {
     if (wifiMulti.run() != WL_CONNECTED) {
