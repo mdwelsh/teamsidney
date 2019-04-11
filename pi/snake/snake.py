@@ -19,10 +19,10 @@ def randcolor():
   b = random.randint(0, 255)
   return b
 
-b=randcolor()
+b = randcolor()
 while y <= 15:
   while x <= 15:
-    b =randcolor()
+    b = randcolor()
     unicorn.set_pixel(x, y, 0, 0, b)
     unicorn.show()
     x = x+1
