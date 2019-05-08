@@ -29,7 +29,7 @@ except ImportError:
              "    python3 -m pip install --user xnornet-<...>.whl\n")
 
 # Generate fake data for testing.
-FAKE_DATA = True
+FAKE_DATA = False
 
 # Input resolution
 INPUT_RES = 0
@@ -54,7 +54,6 @@ def interpolate(color1, color2, mix):
 
 def showImage(image, sx, sy):
     """Draw the given Pillow image on the Unicorn Hat HD."""
-    unicornhathd.clear()
     width, height = image.size
     for x in range(width):
         for y in range(height):
@@ -64,7 +63,6 @@ def showImage(image, sx, sy):
             if tx >= 0 and ty >= 0 and tx < WIDTH and ty < HEIGHT:
                 ty = HEIGHT-1-ty # Flip y axis on Unicorn Hat HD. 
                 unicornhathd.set_pixel(tx, ty, r, g, b)
-    unicornhathd.show()
 
 
 def scrollImage(image, x, y, start_offset, end_offset, wait, horiz=True):
@@ -147,6 +145,7 @@ class Plotter:
     self.height = height
     self.history_size = history_size
     self.values = []
+    self.font = PixelFont("Solar.png", color_top=(255, 255, 0), color_bottom=(255, 0, 0))
 
   def update(self, value):
     # We maintain a list of history_size values.
@@ -170,8 +169,17 @@ class Plotter:
         unicornhathd.set_pixel(index, y, r, g, b)
     unicornhathd.show()
 
+  def drawCurrent(self):
+      unicornhathd.clear()
+      im = self.font.drawString("NOW")
+      showImage(im, 0, 0)
+      current = self.values[-1]
+      im = self.font.drawString("{}".format(current[1]))
+      showImage(im, 0, 8)
+      unicornhathd.show()
+
   def draw(self):
-      self.drawBargraph()
+      self.drawCurrent()
 
 
 def _initialize_camera_vars(camera_res):
@@ -261,13 +269,11 @@ def main(args=None):
     unicornhathd.rotation(0)
     unicornhathd.brightness(0.6)
 
-    font = PixelFont("Solar.png", color_top=(255, 255, 0),
-            color_bottom=(255, 0, 0))
-    im = font.drawString("XNOR.AI PRESENTS...")
-    scrollImage(im, 0, 5, WIDTH, -im.size[0]-10, 0)
-    unicornhathd.show()
-
-    sys.exit(0)
+#    font = PixelFont("Solar.png", color_top=(255, 255, 0),
+#            color_bottom=(255, 0, 0))
+#    im = font.drawString("XNOR.AI PRESENTS...")
+#    scrollImage(im, 0, 5, WIDTH, -im.size[0]-10, 0)
+#    unicornhathd.show()
 
     try:
         camera = picamera.PiCamera()
