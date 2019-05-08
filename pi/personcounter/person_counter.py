@@ -44,50 +44,85 @@ YUV420P_V_PLANE_SIZE = 0
 WIDTH, HEIGHT = unicornhathd.get_shape()
 
 
-def showImage(image):
-    """Draw the given Pillow image on the Unicorn Hat HD."""
-    width, height = image.size
-    print("Image size {}x{}".format(width, height))
-    for x in range(min(WIDTH, width)):
-        for y in range(min(HEIGHT, height)):
-            r, g, b = image.getpixel((x, y))
-            print("Setting {},{} to {}/{}/{}".format(x, y, r, g, b))
-            unicornhathd.set_pixel(x, y, r, g, b)
-    unicornhathd.show()
-
-
 def interpolate(color1, color2, mix):
     """Interpolate between color1 and color2."""
     r = (color1[0] * (1.0 - mix)) + (color2[0] * mix)
     g = (color1[1] * (1.0 - mix)) + (color2[1] * mix)
     b = (color1[2] * (1.0 - mix)) + (color2[2] * mix)
-    return (r, g, b)
+    return (int(r), int(g), int(b))
+
+
+def showImage(image, sx, sy):
+    """Draw the given Pillow image on the Unicorn Hat HD."""
+    unicornhathd.clear()
+    width, height = image.size
+    for x in range(width):
+        for y in range(height):
+            r, g, b = image.getpixel((x, y))
+            tx = sx+x
+            ty = sy+y
+            if tx >= 0 and ty >= 0 and tx < WIDTH and ty < HEIGHT:
+                ty = HEIGHT-1-ty # Flip y axis on Unicorn Hat HD. 
+                unicornhathd.set_pixel(tx, ty, r, g, b)
+    unicornhathd.show()
+
+
+def scrollImage(image, x, y, start_offset, end_offset, wait, horiz=True):
+    offset = start_offset
+    while offset != end_offset:
+        if horiz:
+            showImage(image, x+offset, y)
+        else:
+            showImage(image, x, y+offset)
+        time.sleep(wait)
+        if start_offset < end_offset:
+            offset += 1
+        else:
+            offset-= 1
+
+
 
 
 class PixelFont:
-    def __init__(self, filename):
-        self.glyphs = []
+    def __init__(self, filename, color_top=None, color_bottom=None):
+        self.glyphs = {}
         im = Image.open(filename)
         image = im.convert('RGB')
         width, height = image.size
         delimiter = image.getpixel((0, 0))
+        index = ord('!')  # Fonts generally start with this character.
         last_x = 0
         for x in range(width):
             p = image.getpixel((x, 0))
             if (x > 0 and p == delimiter) or (x == width-1):
                 # Make a glyph from the last chunk.
-                c = image.crop((last_x, 1, x-1, height))
-                self.glyphs.append(c)
+                glyph = image.crop((last_x, 1, x-1, height))
+                # Shade the glyph if requested.
+                if color_top and color_bottom:
+                    self.shadeGlyph(glyph, color_top, color_bottom)
+
+                self.glyphs[chr(index)] = glyph
+                index += 1
                 last_x = x
 
-    def glyph(self, c):
-        # These fonts generally start with the '!' character.
-        index = ord(c) - ord('!')
-        if index < 0 or index > len(self.glyphs):
-            return self.glyph('?')
-        return self.glyphs[index]
+        # Add a space glyph.
+        w, h = self.glyphs['!'].size
+        self.glyphs[' '] = Image.new('RGB', (w, h))
 
-    def drawString(self, string, x, y):
+    def shadeGlyph(self, glyph, color_top, color_bottom):
+        width, height = glyph.size
+        for x in range(width):
+            for y in range(height):
+                c = interpolate(color_top, color_bottom, y / height*1.0)
+                if glyph.getpixel((x, y)) != (0, 0, 0):
+                    glyph.putpixel((x, y), c)
+
+    def glyph(self, c):
+        if c not in self.glyphs:
+            return self.glyph(' ')
+        return self.glyphs[c]
+
+    def drawString(self, string, x=0, y=0):
         iw = 0
         ih = 0
         for c in string:
@@ -100,10 +135,8 @@ class PixelFont:
         for c in string:
             glyph = self.glyph(c)
             w, h = glyph.size
-            print("Glyph: {}".format(list(glyph.getdata())))
             im.paste(glyph, box=(x, y))
             x += w
-        print("Final image: {}".format(list(im.getdata())))
         return im
 
 
@@ -226,10 +259,12 @@ def main(args=None):
 
     # Initialize Unicorn Hat HD
     unicornhathd.rotation(0)
-    unicornhathd.brightness(1.0)
+    unicornhathd.brightness(0.6)
 
-    font = PixelFont("Solar.png")
-    showImage(font.drawString("ABC", 0, 0))
+    font = PixelFont("Solar.png", color_top=(255, 255, 0),
+            color_bottom=(255, 0, 0))
+    im = font.drawString("XNOR.AI PRESENTS...")
+    scrollImage(im, 0, 5, WIDTH, -im.size[0]-10, 0)
     unicornhathd.show()
 
     sys.exit(0)
