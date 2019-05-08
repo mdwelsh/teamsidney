@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
 import argparse
+import datetime
 from pprint import pprint
 import time
-import gc
+import random
 import sys
 import unicornhathd
 
@@ -27,6 +28,9 @@ except ImportError:
              "Please install it with pip:\n\n"
              "    python3 -m pip install --user xnornet-<...>.whl\n")
 
+# Generate fake data for testing.
+FAKE_DATA = True
+
 # Input resolution
 INPUT_RES = 0
 # Constant frame size
@@ -39,37 +43,102 @@ YUV420P_V_PLANE_SIZE = 0
 # Unicorn Hat HD size.
 WIDTH, HEIGHT = unicornhathd.get_shape()
 
-# If mix == 0, then all color1
-# If mix == 1, then all color2.
+
+def showImage(image):
+    """Draw the given Pillow image on the Unicorn Hat HD."""
+    width, height = image.size
+    print("Image size {}x{}".format(width, height))
+    for x in range(min(WIDTH, width)):
+        for y in range(min(HEIGHT, height)):
+            r, g, b = image.getpixel((x, y))
+            print("Setting {},{} to {}/{}/{}".format(x, y, r, g, b))
+            unicornhathd.set_pixel(x, y, r, g, b)
+    unicornhathd.show()
+
+
 def interpolate(color1, color2, mix):
-  r = (color1[0] * (1.0 - mix)) + (color2[0] * mix)
-  g = (color1[1] * (1.0 - mix)) + (color2[1] * mix)
-  b = (color1[2] * (1.0 - mix)) + (color2[2] * mix)
-  return (r, g, b)
+    """Interpolate between color1 and color2."""
+    r = (color1[0] * (1.0 - mix)) + (color2[0] * mix)
+    g = (color1[1] * (1.0 - mix)) + (color2[1] * mix)
+    b = (color1[2] * (1.0 - mix)) + (color2[2] * mix)
+    return (r, g, b)
+
+
+class PixelFont:
+    def __init__(self, filename):
+        self.glyphs = []
+        im = Image.open(filename)
+        image = im.convert('RGB')
+        width, height = image.size
+        delimiter = image.getpixel((0, 0))
+        last_x = 0
+        for x in range(width):
+            p = image.getpixel((x, 0))
+            if (x > 0 and p == delimiter) or (x == width-1):
+                # Make a glyph from the last chunk.
+                c = image.crop((last_x, 1, x-1, height))
+                self.glyphs.append(c)
+                last_x = x
+
+    def glyph(self, c):
+        # These fonts generally start with the '!' character.
+        index = ord(c) - ord('!')
+        if index < 0 or index > len(self.glyphs):
+            return self.glyph('?')
+        return self.glyphs[index]
+
+    def drawString(self, string, x, y):
+        iw = 0
+        ih = 0
+        for c in string:
+            glyph = self.glyph(c)
+            w, h = glyph.size
+            iw += w
+            if h > ih:
+                ih = h
+        im = Image.new('RGB', (iw, ih))
+        for c in string:
+            glyph = self.glyph(c)
+            w, h = glyph.size
+            print("Glyph: {}".format(list(glyph.getdata())))
+            im.paste(glyph, box=(x, y))
+            x += w
+        print("Final image: {}".format(list(im.getdata())))
+        return im
+
+
 
 class Plotter:
-  def __init__(self, width, height):
+  def __init__(self, width, height, history_size=100):
     self.width = width
     self.height = height
+    self.history_size = history_size
     self.values = []
 
   def update(self, value):
-    self.values.append(value)
-    if len(self.values) > self.width:
+    # We maintain a list of history_size values.
+    self.values.append((datetime.datetime.now(), value))
+    if len(self.values) > self.history_size:
       self.values.pop(0)
 
-  def draw(self):
-    for index, val in enumerate(self.values):
-      if val > self.height-1:
-        val = self.height-1
+  def drawBargraph(self):
+    # Plot the most recent 'width' values.
+    last_values = self.values[-self.width:]
+    for index, val in enumerate(last_values):
+      dt, count = val
+      if count > self.height-1:
+        count = self.height-1
       for y in range(self.height):
-        if y < val:
+        if y < count:
           color = interpolate((255, 0, 0), (255, 255, 0), (y * 1.0) / self.height)
         else:
           color = (0, 0, 0)
         r, g, b = color
         unicornhathd.set_pixel(index, y, r, g, b)
     unicornhathd.show()
+
+  def draw(self):
+      self.drawBargraph()
 
 
 def _initialize_camera_vars(camera_res):
@@ -141,7 +210,11 @@ def _inference_loop(args, camera, stream, model):
         model_input = _get_camera_frame(args, camera, stream)
         if model_input is not None:
             results = model.evaluate(model_input)
-            num_people = len(results)
+            if FAKE_DATA:
+                num_people = random.randint(0, HEIGHT)
+            else:
+                num_people = len(results)
+            print("Detected {} people".format(num_people))
             plotter.update(num_people)
             plotter.draw()
             time.sleep(1.0)
@@ -150,6 +223,16 @@ def _inference_loop(args, camera, stream, model):
 def main(args=None):
     parser = _make_argument_parser()
     args = parser.parse_args(args)
+
+    # Initialize Unicorn Hat HD
+    unicornhathd.rotation(0)
+    unicornhathd.brightness(1.0)
+
+    font = PixelFont("Solar.png")
+    showImage(font.drawString("ABC", 0, 0))
+    unicornhathd.show()
+
+    sys.exit(0)
 
     try:
         camera = picamera.PiCamera()
@@ -174,11 +257,7 @@ def main(args=None):
         # https://picamera.readthedocs.io/en/release-1.13/recipes2.html#unencoded-image-capture-yuv-format
         camera.start_recording(stream, format=args.camera_recording_format)
 
-        # Initialize Unicorn Hat HD
-        unicornhathd.rotation(0)
-        unicornhathd.brightness(0.7)
-
-        # Load Xnor model from disk
+        # Load Xnor model from disk.
         model = xnornet.Model.load_built_in()
 
         _inference_loop(args, camera, stream, model)
