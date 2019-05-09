@@ -2,6 +2,7 @@
 
 import argparse
 import datetime
+from itertools import cycle
 from pprint import pprint
 import time
 import random
@@ -29,7 +30,7 @@ except ImportError:
              "    python3 -m pip install --user xnornet-<...>.whl\n")
 
 # Generate fake data for testing.
-FAKE_DATA = True
+FAKE_DATA = False
 
 # Input resolution
 INPUT_RES = 0
@@ -67,14 +68,8 @@ def showImage(image, sx, sy):
 
     crop_right = crop_left + WIDTH
     crop_bottom = crop_top + HEIGHT
-
-    print("cl {} cr {} ct {} cb {}".format(crop_left, crop_right, crop_top, crop_bottom))
-
     crop_right = min(image.size[0], crop_right)
     crop_bottom = min(image.size[1], crop_bottom)
-
-    print("clamped cl {} cr {} ct {} cb {}".format(crop_left, crop_right, crop_top, crop_bottom))
-
     if crop_left >= crop_right or crop_top >= crop_bottom:
         # Nothing to do.
         return
@@ -82,26 +77,16 @@ def showImage(image, sx, sy):
     cr = image.crop((crop_left, crop_top, crop_right, crop_bottom))
 
     width, height = cr.size
-    print("resulting crop is {}x{}".format(width, height))
-
+    sx = max(0, sx)
+    sy = max(0, sy)
     for x in range(width):
         for y in range(height):
             r, g, b = cr.getpixel((x, y))
             tx = sx+x
             ty = sy+y
-            #print("crop {},{} -> {},{}".format(x, y, tx, ty))
             if tx >= 0 and ty >= 0 and tx < WIDTH and ty < HEIGHT:
                 ty = HEIGHT-1-ty # Flip y axis on Unicorn Hat HD. 
                 unicornhathd.set_pixel(tx, ty, r, g, b)
-
-#    for x in range(width):
-#        for y in range(height):
-#            r, g, b = image.getpixel((x, y))
-#            tx = sx+x
-#            ty = sy+y
-#            if tx >= 0 and ty >= 0 and tx < WIDTH and ty < HEIGHT:
-#                ty = HEIGHT-1-ty # Flip y axis on Unicorn Hat HD. 
-#                unicornhathd.set_pixel(tx, ty, r, g, b)
 
 
 def scrollImage(image, x, y, start_offset, end_offset, wait, horiz=True):
@@ -202,7 +187,7 @@ class Plotter:
     self.blueFont = PixelFont("SaikyoSansBlack.png", color_top=(200, 0, 255), color_bottom=(0, 0, 255))
     self.grayFont = PixelFont("Solar.png", color_top=(255, 255, 255), color_bottom=(100, 100, 100))
     self.bannerFont = PixelFont("kromasky_16x16_black.gif", glyphwidth=16)
-    self.iter = 0
+    self.drawMethods = cycle([self.drawBanner, self.drawCurrent, self.drawRecent, self.drawClock])
 
   def update(self, value):
     # We maintain a list of history_size values.
@@ -237,7 +222,7 @@ class Plotter:
       showImage(im, 0, 8)
       unicornhathd.show()
       im = self.redFont.drawString("CURRENT ")
-      scrollImage(im, 0, 0, WIDTH+1, -im.size[0], 0.0)
+      scrollImage(im, 0, 0, WIDTH+1, -im.size[0], 0.02)
 
   def drawRecent(self):
       unicornhathd.clear()
@@ -248,30 +233,20 @@ class Plotter:
       showImage(im, 0, 8)
       unicornhathd.show()
       im = self.redFont.drawString("LAST TEN MINUTES ")
-      scrollImage(im, 0, 0, WIDTH+1, -im.size[0], 0.0)
+      scrollImage(im, 0, 0, WIDTH+1, -im.size[0], 0.02)
 
   def drawClock(self):
       im1 = self.grayFont.drawString("IT IS NOW ")
       now = datetime.datetime.now()
-      im2 = self.redFont.drawString(now.strftime("%H:%M:%S %d %h %Y"))
+      im2 = self.redFont.drawString(now.strftime("%H:%M:%S  "))
       im3 = Image.new('RGB', (im1.size[0]+im2.size[0], im1.size[0]))
       im3.paste(im1, (0, 0))
       im3.paste(im2, (im1.size[0], 0))
-      scrollImage(im3, 0, 0, WIDTH+1, -im3.size[0], 0.0)
+      scrollImage(im3, 0, 4, WIDTH+1, -im3.size[0], 0.02)
 
   def draw(self):
-      if self.iter == 0:
-          self.drawBanner()
-      elif self.iter == 1:
-          self.drawCurrent()
-      elif self.iter == 2:
-          self.drawRecent()
-      elif self.iter == 3:
-          self.drawClock()
-      self.iter += 1
-      if self.iter == 4:
-          self.iter = 0
-
+      method = next(self.drawMethods)
+      method()
 
 def _initialize_camera_vars(camera_res):
     global INPUT_RES
@@ -359,37 +334,6 @@ def main(args=None):
     # Initialize Unicorn Hat HD
     unicornhathd.rotation(0)
     unicornhathd.brightness(0.6)
-
-
-    font = PixelFont("kromasky_16x16_black.gif", glyphwidth=16)
-#    im = font.drawString("ABC123")
-    im = Image.new("RGB", (32,32))
-    for x in range(32):
-        for y in range(32):
-            if x % 2 == 0:
-                im.putpixel((x, y), (x*8, 0, y*8))
-            else:
-                im.putpixel((x, y), (x*8, y*8, 0))
-
-    offset_y = 0
-    for offset_x in range(10, -50, -1):
-        print("Offset: {},{}".format(offset_x, offset_y))
-        unicornhathd.clear()
-        for x in range(WIDTH):
-            for y in range(HEIGHT):
-                unicornhathd.set_pixel(x, y, 0, 100, 0)
-        showImage(im, offset_x, offset_y)
-        unicornhathd.show()
-        input("Press Enter to continue...")
-    sys.exit(0)
-
-#    for c in range(ord('!'), ord('Z')):
-#        print("Showing index {} char {}".format(c, chr(c)))
-#        im = font.drawString(chr(c))
-#        unicornhathd.clear()
-#        showImage(im, 0, 0)
-#        unicornhathd.show()
-#        time.sleep(2.0)
 
     try:
         camera = picamera.PiCamera()
