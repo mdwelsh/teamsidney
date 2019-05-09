@@ -187,7 +187,7 @@ class Plotter:
     self.blueFont = PixelFont("SaikyoSansBlack.png", color_top=(200, 0, 255), color_bottom=(0, 0, 255))
     self.grayFont = PixelFont("Solar.png", color_top=(255, 255, 255), color_bottom=(100, 100, 100))
     self.bannerFont = PixelFont("kromasky_16x16_black.gif", glyphwidth=16)
-    self.drawMethods = cycle([self.drawBanner, self.drawCurrent, self.drawRecent, self.drawClock])
+    self.drawMethods = cycle([self.drawBanner, self.drawCurrent, self.drawRecent, self.drawClock, self.drawLastHour, self.drawBargraph])
 
   def update(self, value):
     # We maintain a list of history_size values.
@@ -197,6 +197,7 @@ class Plotter:
 
   def drawBargraph(self):
     # Plot the most recent 'width' values.
+    unicornhathd.clear()
     last_values = self.values[-self.width:]
     for index, val in enumerate(last_values):
       dt, count = val
@@ -210,6 +211,8 @@ class Plotter:
         r, g, b = color
         unicornhathd.set_pixel(index, y, r, g, b)
     unicornhathd.show()
+    im = self.grayFont.drawString("RECENT ACTIVITY ")
+    scrollImage(im, 0, 0, WIDTH+1, -im.size[0], 0.02)
 
   def drawBanner(self):
       im = self.bannerFont.drawString("XNOR.AI ")
@@ -233,6 +236,17 @@ class Plotter:
       showImage(im, 0, 8)
       unicornhathd.show()
       im = self.redFont.drawString("LAST TEN MINUTES ")
+      scrollImage(im, 0, 0, WIDTH+1, -im.size[0], 0.02)
+
+  def drawLastHour(self):
+      unicornhathd.clear()
+      now = datetime.datetime.now()
+      vals = [val for (dt, val) in self.values if now-dt <= datetime.timedelta(seconds=60*60)]
+      maxval = max(vals)
+      im = self.blueFont.drawString("{:02d}".format(maxval))
+      showImage(im, 0, 8)
+      unicornhathd.show()
+      im = self.redFont.drawString("LAST HOUR ")
       scrollImage(im, 0, 0, WIDTH+1, -im.size[0], 0.02)
 
   def drawClock(self):
