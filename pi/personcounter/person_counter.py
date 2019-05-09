@@ -29,7 +29,7 @@ except ImportError:
              "    python3 -m pip install --user xnornet-<...>.whl\n")
 
 # Generate fake data for testing.
-FAKE_DATA = False
+FAKE_DATA = True
 
 # Input resolution
 INPUT_RES = 0
@@ -54,15 +54,51 @@ def interpolate(color1, color2, mix):
 
 def showImage(image, sx, sy):
     """Draw the given Pillow image on the Unicorn Hat HD."""
-    width, height = image.size
+    # First crop the image.
+    if sx > 0:
+        crop_left = 0
+        crop_right = WIDTH - sx
+    else:
+        crop_left = -sx
+        crop_right = -sx + WIDTH
+
+    if sy > 0:
+        crop_top = 0
+        crop_bottom = HEIGHT - sy
+    else:
+        crop_top = -sy
+        crop_bottom = -sy + HEIGHT
+
+    crop_left = max(0, crop_left)
+    crop_right = min(WIDTH, crop_right)
+    crop_top = max(0, crop_top)
+    crop_bottom = min(HEIGHT, crop_bottom)
+
+    print("cl {} cr {} ct {} cb {}".format(crop_left, crop_right, crop_top, crop_bottom))
+
+    cr = image.crop((crop_left, crop_top, crop_right, crop_bottom))
+
+    width, height = cr.size
+    print("resulting crop is {}x{}".format(width, height))
+
     for x in range(width):
         for y in range(height):
-            r, g, b = image.getpixel((x, y))
+            r, g, b = cr.getpixel((x, y))
             tx = sx+x
             ty = sy+y
+            #print("crop {},{} -> {},{}".format(x, y, tx, ty))
             if tx >= 0 and ty >= 0 and tx < WIDTH and ty < HEIGHT:
                 ty = HEIGHT-1-ty # Flip y axis on Unicorn Hat HD. 
                 unicornhathd.set_pixel(tx, ty, r, g, b)
+
+#    for x in range(width):
+#        for y in range(height):
+#            r, g, b = image.getpixel((x, y))
+#            tx = sx+x
+#            ty = sy+y
+#            if tx >= 0 and ty >= 0 and tx < WIDTH and ty < HEIGHT:
+#                ty = HEIGHT-1-ty # Flip y axis on Unicorn Hat HD. 
+#                unicornhathd.set_pixel(tx, ty, r, g, b)
 
 
 def scrollImage(image, x, y, start_offset, end_offset, wait, horiz=True):
@@ -72,6 +108,7 @@ def scrollImage(image, x, y, start_offset, end_offset, wait, horiz=True):
             showImage(image, x+offset, y)
         else:
             showImage(image, x, y+offset)
+        unicornhathd.show()
         time.sleep(wait)
         if start_offset < end_offset:
             offset += 1
@@ -79,33 +116,47 @@ def scrollImage(image, x, y, start_offset, end_offset, wait, horiz=True):
             offset-= 1
 
 
-
-
 class PixelFont:
-    def __init__(self, filename, color_top=None, color_bottom=None):
+    def __init__(self, filename, glyphwidth=None, color_top=None, color_bottom=None):
         self.glyphs = {}
         im = Image.open(filename)
         image = im.convert('RGB')
         width, height = image.size
-        delimiter = image.getpixel((0, 0))
-        index = ord('!')  # Fonts generally start with this character.
+        if not glyphwidth:
+            delimiter = image.getpixel((0, 0))
+            index = ord('!')  # Fonts generally start with this character.
+        else:
+            index = ord(' ')  # This is the starting character for non-delimited fonts.
         last_x = 0
         for x in range(width):
-            p = image.getpixel((x, 0))
-            if (x > 0 and p == delimiter) or (x == width-1):
-                # Make a glyph from the last chunk.
-                glyph = image.crop((last_x, 1, x-1, height))
-                # Shade the glyph if requested.
-                if color_top and color_bottom:
-                    self.shadeGlyph(glyph, color_top, color_bottom)
-
-                self.glyphs[chr(index)] = glyph
-                index += 1
-                last_x = x
+            if not glyphwidth:
+                # Automatically detect glyph width using ticks on the
+                # first row.
+                p = image.getpixel((x, 0))
+                if (x > 0 and p == delimiter) or (x == width-1):
+                    # Make a glyph from the last chunk.
+                    glyph = image.crop((last_x, 1, x-1, height))
+                    # Shade the glyph if requested.
+                    if color_top and color_bottom:
+                        self.shadeGlyph(glyph, color_top, color_bottom)
+                    self.glyphs[chr(index)] = glyph
+                    index += 1
+                    last_x = x
+            else:
+                # Assume given glyph width.
+                if (x % glyphwidth == 0) and (x > 0 or (x == width-1)):
+                    glyph = image.crop((last_x, 0, x-1, height))
+                    # Shade the glyph if requested.
+                    if color_top and color_bottom:
+                        self.shadeGlyph(glyph, color_top, color_bottom)
+                    self.glyphs[chr(index)] = glyph
+                    index += 1
+                    last_x = x
 
         # Add a space glyph.
-        w, h = self.glyphs['!'].size
-        self.glyphs[' '] = Image.new('RGB', (w, h))
+        if not glyphwidth:
+            w, h = self.glyphs['!'].size
+            self.glyphs[' '] = Image.new('RGB', (w, h))
 
     def shadeGlyph(self, glyph, color_top, color_bottom):
         width, height = glyph.size
@@ -138,14 +189,17 @@ class PixelFont:
         return im
 
 
-
 class Plotter:
   def __init__(self, width, height, history_size=100):
     self.width = width
     self.height = height
     self.history_size = history_size
     self.values = []
-    self.font = PixelFont("Solar.png", color_top=(255, 255, 0), color_bottom=(255, 0, 0))
+    self.redFont = PixelFont("Solar.png", color_top=(255, 255, 0), color_bottom=(255, 0, 0))
+    self.blueFont = PixelFont("SaikyoSansBlack.png", color_top=(200, 0, 255), color_bottom=(0, 0, 255))
+    self.grayFont = PixelFont("Solar.png", color_top=(255, 255, 255), color_bottom=(100, 100, 100))
+    self.bannerFont = PixelFont("kromasky_16x16_black.gif", glyphwidth=16)
+    self.iter = 0
 
   def update(self, value):
     # We maintain a list of history_size values.
@@ -169,17 +223,51 @@ class Plotter:
         unicornhathd.set_pixel(index, y, r, g, b)
     unicornhathd.show()
 
+  def drawBanner(self):
+      im = self.bannerFont.drawString("XNOR.AI ")
+      scrollImage(im, 0, 0, WIDTH+1, -im.size[0], 0.0)
+
   def drawCurrent(self):
       unicornhathd.clear()
-      im = self.font.drawString("NOW")
-      showImage(im, 0, 0)
       current = self.values[-1]
-      im = self.font.drawString("{}".format(current[1]))
+      im = self.blueFont.drawString("{:02d}".format(current[1]))
       showImage(im, 0, 8)
       unicornhathd.show()
+      im = self.redFont.drawString("CURRENT ")
+      scrollImage(im, 0, 0, WIDTH+1, -im.size[0], 0.0)
+
+  def drawRecent(self):
+      unicornhathd.clear()
+      now = datetime.datetime.now()
+      vals = [val for (dt, val) in self.values if now-dt <= datetime.timedelta(seconds=600)]
+      maxval = max(vals)
+      im = self.blueFont.drawString("{:02d}".format(maxval))
+      showImage(im, 0, 8)
+      unicornhathd.show()
+      im = self.redFont.drawString("LAST TEN MINUTES ")
+      scrollImage(im, 0, 0, WIDTH+1, -im.size[0], 0.0)
+
+  def drawClock(self):
+      im1 = self.grayFont.drawString("IT IS NOW ")
+      now = datetime.datetime.now()
+      im2 = self.redFont.drawString(now.strftime("%H:%M:%S %d %h %Y"))
+      im3 = Image.new('RGB', (im1.size[0]+im2.size[0], im1.size[0]))
+      im3.paste(im1, (0, 0))
+      im3.paste(im2, (im1.size[0], 0))
+      scrollImage(im3, 0, 0, WIDTH+1, -im3.size[0], 0.0)
 
   def draw(self):
-      self.drawCurrent()
+      if self.iter == 0:
+          self.drawBanner()
+      elif self.iter == 1:
+          self.drawCurrent()
+      elif self.iter == 2:
+          self.drawRecent()
+      elif self.iter == 3:
+          self.drawClock()
+      self.iter += 1
+      if self.iter == 4:
+          self.iter = 0
 
 
 def _initialize_camera_vars(camera_res):
@@ -267,13 +355,38 @@ def main(args=None):
 
     # Initialize Unicorn Hat HD
     unicornhathd.rotation(0)
-    unicornhathd.brightness(0.6)
+    unicornhathd.brightness(1.0)
 
-#    font = PixelFont("Solar.png", color_top=(255, 255, 0),
-#            color_bottom=(255, 0, 0))
-#    im = font.drawString("XNOR.AI PRESENTS...")
-#    scrollImage(im, 0, 5, WIDTH, -im.size[0]-10, 0)
-#    unicornhathd.show()
+
+    font = PixelFont("kromasky_16x16_black.gif", glyphwidth=16)
+#    im = font.drawString("ABC123")
+    im = Image.new("RGB", (32,32))
+    for x in range(32):
+        for y in range(32):
+            if x % 2 == 0:
+                im.putpixel((x, y), (x*8, 0, y*8))
+            else:
+                im.putpixel((x, y), (x*8, y*8, 0))
+
+    offset_y = 0
+    for offset_x in range(0, -32, -1):
+        print("Offset: {},{}".format(offset_x, offset_y))
+        unicornhathd.clear()
+        for x in range(WIDTH):
+            for y in range(HEIGHT):
+                unicornhathd.set_pixel(x, y, 255, 255, 255)
+        showImage(im, offset_x, offset_y)
+        unicornhathd.show()
+        input("Press Enter to continue...")
+    sys.exit(0)
+
+#    for c in range(ord('!'), ord('Z')):
+#        print("Showing index {} char {}".format(c, chr(c)))
+#        im = font.drawString(chr(c))
+#        unicornhathd.clear()
+#        showImage(im, 0, 0)
+#        unicornhathd.show()
+#        time.sleep(2.0)
 
     try:
         camera = picamera.PiCamera()
