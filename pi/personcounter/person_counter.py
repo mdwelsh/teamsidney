@@ -57,24 +57,27 @@ def showImage(image, sx, sy):
     # First crop the image.
     if sx > 0:
         crop_left = 0
-        crop_right = WIDTH - sx
     else:
         crop_left = -sx
-        crop_right = -sx + WIDTH
 
     if sy > 0:
         crop_top = 0
-        crop_bottom = HEIGHT - sy
     else:
         crop_top = -sy
-        crop_bottom = -sy + HEIGHT
 
-    crop_left = max(0, crop_left)
-    crop_right = min(WIDTH, crop_right)
-    crop_top = max(0, crop_top)
-    crop_bottom = min(HEIGHT, crop_bottom)
+    crop_right = crop_left + WIDTH
+    crop_bottom = crop_top + HEIGHT
 
     print("cl {} cr {} ct {} cb {}".format(crop_left, crop_right, crop_top, crop_bottom))
+
+    crop_right = min(image.size[0], crop_right)
+    crop_bottom = min(image.size[1], crop_bottom)
+
+    print("clamped cl {} cr {} ct {} cb {}".format(crop_left, crop_right, crop_top, crop_bottom))
+
+    if crop_left >= crop_right or crop_top >= crop_bottom:
+        # Nothing to do.
+        return
 
     cr = image.crop((crop_left, crop_top, crop_right, crop_bottom))
 
@@ -355,7 +358,7 @@ def main(args=None):
 
     # Initialize Unicorn Hat HD
     unicornhathd.rotation(0)
-    unicornhathd.brightness(1.0)
+    unicornhathd.brightness(0.6)
 
 
     font = PixelFont("kromasky_16x16_black.gif", glyphwidth=16)
@@ -369,12 +372,12 @@ def main(args=None):
                 im.putpixel((x, y), (x*8, y*8, 0))
 
     offset_y = 0
-    for offset_x in range(0, -32, -1):
+    for offset_x in range(10, -50, -1):
         print("Offset: {},{}".format(offset_x, offset_y))
         unicornhathd.clear()
         for x in range(WIDTH):
             for y in range(HEIGHT):
-                unicornhathd.set_pixel(x, y, 255, 255, 255)
+                unicornhathd.set_pixel(x, y, 0, 100, 0)
         showImage(im, offset_x, offset_y)
         unicornhathd.show()
         input("Press Enter to continue...")
