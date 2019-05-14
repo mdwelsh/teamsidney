@@ -240,12 +240,13 @@ class Plotter:
             color_bottom=(100, 100, 100))
         self.bannerFont = PixelFont("kromasky_16x16_black.gif", glyphwidth=16)
         self.logoImage = Image.open("xnor-16x16.png").convert("RGB")
-        self.bannerImage = self.bannerFont.drawString("  XNOR.AI  ")
+        self.bannerImage = self.bannerFont.drawString("XNOR.AI ")
         self.drawMethods = cycle([
             self.drawLogo,
-            self.drawBanner,
-            # self.drawCurrent, self.drawRecent, self.drawClock,
-            # self.drawLastHour, self.drawBargraph
+            self.drawCurrent,
+            self.drawRecent,
+            self.drawBargraph,
+            self.drawLastHour,
         ])
 
     def update(self, value):
@@ -275,12 +276,9 @@ class Plotter:
         scrollImage(im, 0, 0, WIDTH + 1, -im.size[0], 0.02)
 
     def drawLogo(self):
-        scrollImage(self.logoImage, 0, 0, WIDTH + 1, 0, 0.2)
-        time.wait(3)
-        scrollImage(self.logoImage, 0, 0, 0, -self.logoImage.size[0], 0.2)
-
-    def drawBanner(self):
-        """Draw a banner on the display."""
+        unicornhathd.clear()
+        scrollImage(self.logoImage, 0, 0, WIDTH + 1, 0, 0.0)
+        time.sleep(3)
         scrollImage(self.bannerImage, 0, 0, WIDTH + 1,
                     -self.bannerImage.size[0], 0.0)
 
@@ -289,7 +287,7 @@ class Plotter:
         unicornhathd.clear()
         current = self.values[-1]
         im = self.blueFont.drawString("{:02d}".format(current[1]))
-        showImage(im, 0, 8)
+        scrollImage(im, 0, 0, HEIGHT, 8, 0.0, horiz=False)
         unicornhathd.show()
         im = self.redFont.drawString("CURRENT ")
         scrollImage(im, 0, 0, WIDTH + 1, -im.size[0], 0.02)
@@ -304,7 +302,7 @@ class Plotter:
         ]
         maxval = max(vals)
         im = self.blueFont.drawString("{:02d}".format(maxval))
-        showImage(im, 0, 8)
+        scrollImage(im, 0, 0, HEIGHT, 8, 0.0, horiz=False)
         unicornhathd.show()
         im = self.redFont.drawString("LAST TEN MINUTES ")
         scrollImage(im, 0, 0, WIDTH + 1, -im.size[0], 0.02)
@@ -319,7 +317,7 @@ class Plotter:
         ]
         maxval = max(vals)
         im = self.blueFont.drawString("{:02d}".format(maxval))
-        showImage(im, 0, 8)
+        scrollImage(im, 0, 0, HEIGHT, 8, 0.0, horiz=False)
         unicornhathd.show()
         im = self.redFont.drawString("LAST HOUR ")
         scrollImage(im, 0, 0, WIDTH + 1, -im.size[0], 0.02)
