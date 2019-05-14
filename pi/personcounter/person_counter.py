@@ -239,15 +239,13 @@ class Plotter:
             color_top=(255, 255, 255),
             color_bottom=(100, 100, 100))
         self.bannerFont = PixelFont("kromasky_16x16_black.gif", glyphwidth=16)
-        logo = Image.open("xnor-16x16.png").convert("RGB")
-        bs = self.bannerFont.drawString("  XNOR.AI  ")
-        self.bannerImage = Image.new('RGB',
-                                     (logo.size[0] + bs.size[0], logo.size[0]))
-        self.bannerImage.paste(logo, box=(0, 0))
-        self.bannerImage.paste(bs, box=(logo.size[0], 0))
+        self.logoImage = Image.open("xnor-16x16.png").convert("RGB")
+        self.bannerImage = self.bannerFont.drawString("  XNOR.AI  ")
         self.drawMethods = cycle([
-            self.drawBanner, self.drawCurrent, self.drawRecent, self.drawClock,
-            self.drawLastHour, self.drawBargraph
+            self.drawLogo,
+            self.drawBanner,
+            # self.drawCurrent, self.drawRecent, self.drawClock,
+            # self.drawLastHour, self.drawBargraph
         ])
 
     def update(self, value):
@@ -275,6 +273,11 @@ class Plotter:
         unicornhathd.show()
         im = self.grayFont.drawString("RECENT ACTIVITY ")
         scrollImage(im, 0, 0, WIDTH + 1, -im.size[0], 0.02)
+
+    def drawLogo(self):
+        scrollImage(self.logoImage, 0, 0, WIDTH + 1, 0, 0.2)
+        time.wait(3)
+        scrollImage(self.logoImage, 0, 0, 0, -self.logoImage.size[0], 0.2)
 
     def drawBanner(self):
         """Draw a banner on the display."""
