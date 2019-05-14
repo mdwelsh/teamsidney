@@ -239,6 +239,12 @@ class Plotter:
             color_top=(255, 255, 255),
             color_bottom=(100, 100, 100))
         self.bannerFont = PixelFont("kromasky_16x16_black.gif", glyphwidth=16)
+        logo = Image.open("xnor-16x16.png").convert("RGB")
+        bs = self.bannerFont.drawString("  XNOR.AI  ")
+        self.bannerImage = Image.new('RGB',
+                                     (logo.size[0] + bs.size[0], logo.size[0]))
+        self.bannerImage.paste(logo, box=(0, 0))
+        self.bannerImage.paste(bs, box=(logo.size[0], 0))
         self.drawMethods = cycle([
             self.drawBanner, self.drawCurrent, self.drawRecent, self.drawClock,
             self.drawLastHour, self.drawBargraph
@@ -270,10 +276,10 @@ class Plotter:
         im = self.grayFont.drawString("RECENT ACTIVITY ")
         scrollImage(im, 0, 0, WIDTH + 1, -im.size[0], 0.02)
 
-    def drawBanner(self, string="XNOR.AI "):
+    def drawBanner(self):
         """Draw a banner on the display."""
-        im = self.bannerFont.drawString(string)
-        scrollImage(im, 0, 0, WIDTH + 1, -im.size[0], 0.0)
+        scrollImage(self.bannerImage, 0, 0, WIDTH + 1,
+                    -self.bannerImage.size[0], 0.0)
 
     def drawCurrent(self):
         """Display the current counter value."""
