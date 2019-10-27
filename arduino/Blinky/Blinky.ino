@@ -33,7 +33,7 @@ deviceConfig_t curConfig = (deviceConfig_t) {
   DEFAULT_DATA_PIN,
   DEFAULT_CLOCK_PIN,
   0,   // Color change.
-  100, // Brightness.
+  50, // Brightness.
   100, // Speed.
   0,   // Color1.
   0,   // Color2.
@@ -41,20 +41,20 @@ deviceConfig_t curConfig = (deviceConfig_t) {
 };
 deviceConfig_t nextConfig;
 
-//#define TEST_CONFIG // Define for local testing.
+#define TEST_CONFIG // Define for local testing.
 #ifdef TEST_CONFIG
 // Only used for testing.
 deviceConfig_t testConfig = (deviceConfig_t) {
-  "christmas",
+  "spaceinvaders",
   true,
   NUMPIXELS,
   DEFAULT_DATA_PIN,
   DEFAULT_CLOCK_PIN,
   5,   // Color change.
-  20, // Brightness.
-  100, // Speed.
-  0xffff00,   // Color1.
-  0xffb000,   // Color2.
+  50, // Brightness.
+  10, // Speed.
+  0xff0000,   // Color1.
+  0xff00ff,   // Color2.
   ""   // Firmware.
 };
 #endif
@@ -125,6 +125,7 @@ void setup() {
   makeNewStrip(NUMPIXELS, DEFAULT_DATA_PIN, DEFAULT_CLOCK_PIN);
   curMode = BlinkyMode::Create(&curConfig);
 
+#ifndef TEST_CONFIG
   for (uint8_t t = 4; t > 0; t--) {
     Serial.printf("[SETUP] WAIT %d...\n", t);
     Serial.flush();
@@ -133,6 +134,7 @@ void setup() {
   wifiMulti.addAP("theonet_EXT", "juneaudog");
   //wifiMulti.addAP("theonet", "juneaudog");
 
+#endif // TEST_CONFIG
   xTaskCreate(TaskCheckin, (const char *)"Checkin", 1024*40, NULL, 2, NULL);
   xTaskCreate(TaskRunConfig, (const char *)"Run config", 1024*40, NULL, 8, NULL);
   Serial.println("Done with setup()");

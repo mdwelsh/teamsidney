@@ -52,6 +52,19 @@ public:
   void run();
 };
 
+class RotatingMode : public BlinkyMode {
+  public:
+  RotatingMode(BlinkyMode** modes, int numModes, int rotateTime) 
+    : modes_(modes), numModes_(numModes), rotateTime_(rotateTime), lastSwitch_(0), curIndex_(0) {}
+  void run();
+  private:
+    BlinkyMode** modes_;
+    int numModes_;
+    int rotateTime_;
+    int curIndex_;
+    unsigned long lastSwitch_;
+};
+
 class PixelMapper : public ColorChangingMode {
 public:
   PixelMapper(const deviceConfig_t* config) : ColorChangingMode(config) {}
@@ -142,5 +155,33 @@ private:
   bool _multi, _randInit;
 };
 
+
+class Comet : public BlinkyMode {
+  public:
+  Comet(uint32_t color, int tail, int wait) : color_(color), tail_(tail), wait_(wait) {}
+  void run();
+  private:
+  uint32_t color_;
+  int tail_;
+  int wait_;
+};
+
+class DoubleWipe : public BlinkyMode {
+  public:
+  DoubleWipe(uint32_t color1, uint32_t color2, int wait) : color1_(color1), color2_(color2), wait_(wait) {}
+  void run();
+  private:
+  uint32_t color1_, color2_;
+  int wait_;
+};
+
+class Pulse : public BlinkyMode {
+  public:
+  Pulse(uint32_t color1, uint32_t color2, int wait) : color1_(color1), color2_(color2), wait_(wait) {}
+  void run();
+  private:
+  uint32_t color1_, color2_;
+  int wait_;
+};
 
 #endif

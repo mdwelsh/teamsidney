@@ -15,6 +15,9 @@ const uint32_t CHRISTMAS_COLORS[] = {
   0xffac00,
 };
 
+#define NUM_SPACEINVADERS_MODES 6
+BlinkyMode* SPACEINVADERS_MODES[] = {};
+
 BlinkyMode* BlinkyMode::Create(const deviceConfig_t *config) {
   if (!strcmp(config->mode, "") || !strcmp(config->mode, "off") || !strcmp(config->mode, "none")) {
     Serial.println("Creating NoneMode");
@@ -92,6 +95,36 @@ BlinkyMode* BlinkyMode::Create(const deviceConfig_t *config) {
   if (!strcmp(config->mode, "christmas") || !strcmp(config->mode, "Christmas")) {
     PixelMapper *m = new MultiColorMapper(config, CHRISTMAS_COLORS, NUM_CHRISTMAS_COLORS);
     return new Rain(config, m, strip->numPixels(), 0.7, 0.8, 0.6, 0.1, 0.1, 0.1, false, true);
+  }
+  if (!strcmp(config->mode, "spaceinvaders")) {
+
+    /* Pulse */
+    SPACEINVADERS_MODES[0] = new Pulse(0x0000ff, 0xff00ff, 20);
+
+    /* DoubleWipe */
+    SPACEINVADERS_MODES[1] = new DoubleWipe(0xff0000, 0x0000ff, 25);
+    
+    /* Comet */
+    SPACEINVADERS_MODES[2] = new Comet(0xffffff, 60, 1);
+
+    /* Rain */
+    uint32_t *colors1 = (uint32_t *)malloc(2 * sizeof(uint32_t));
+    colors1[0] = 0xffffff;
+    colors1[1] = 0x000080;
+    PixelMapper *m1 = new RandomColorMapper(config, colors1, 2);
+    SPACEINVADERS_MODES[3] = new Rain(config, m1, strip->numPixels()*2, 0.02, 1.0, 0.0, 0.1, 0.02, 0.5, false, false);
+
+    /* Rainbow */
+    SPACEINVADERS_MODES[4] = new Rainbow(config);
+
+    /* Shimmer */
+    uint32_t *colors2 = (uint32_t *)malloc(2 * sizeof(uint32_t));
+    colors2[0] = 0x404040;
+    colors2[1] = 0x00ff00;
+    PixelMapper *m2 = new RandomColorMapper(config, colors2, 2);
+    SPACEINVADERS_MODES[5] = new Rain(config, m2, 10, 0.1, 1.0, 0.0, 0.2, 0.05, 1.0, true, false);
+    
+    return new RotatingMode(SPACEINVADERS_MODES, 4, 10000);
   }
   
   printf("Warning: Create got unknown mode %s\n", config->mode);
@@ -223,5 +256,114 @@ uint32_t Rain::PixelColor(int index) {
     }
   }
   return tc;
-  
+}
+
+void RotatingMode::run() {
+  if (lastSwitch_ == 0) {
+    lastSwitch_ = millis();
+  }
+  if (millis() - lastSwitch_ > rotateTime_) {
+    lastSwitch_ = millis();
+    curIndex_++;
+    if (curIndex_ >= numModes_) {
+      curIndex_ = 0;
+    }
+  }
+  modes_[curIndex_]->run();
+}
+
+void DoubleWipe::run() {
+  Serial.println("DoubleWipe::run() called");
+  setAll(0);
+  int numSteps = strip->numPixels() / 2;
+  float mix;
+  for (int p = 0; p < numSteps; p++) {
+    mix = (p * 1.0) / (numSteps * 1.0);
+    uint32_t col = interpolate(color1_, color2_, mix);
+    strip->setPixelColor(p, col);
+    strip->setPixelColor(strip->numPixels() - (p + 1), col);
+    strip->show();
+    delay(wait_);
+  }
+  for (int p = 0; p < numSteps; p++) {
+    strip->setPixelColor(p, 0);
+    strip->setPixelColor(strip->numPixels() - (p + 1), 0);
+    strip->show();
+    delay(wait_);
+  }
+}
+
+void Comet::run() {
+  Serial.println("Comet::run() called");
+  strip->setBrightness(30);
+
+  int numBounces = 0;
+  int dir = 1;
+  int curIndex = 0;
+  while (numBounces < 2) {
+    int p;
+    for (int offset = 0; offset < tail_; offset++) {
+      float fade = (offset*offset*1.0) / (tail_ * 1.0);
+      if (fade > 1.0) {
+        fade = 1.0;
+      }
+      uint32_t tc = interpolate(color_, 0, fade);
+      p = curIndex - (offset * dir);
+      if (p >= 0 && p < strip->numPixels()) {
+        strip->setPixelColor(p, tc);
+      } 
+    }
+    // Set the end of the comet to black, regardless.
+    if (p >= 0 && p < strip->numPixels()) {
+      strip->setPixelColor(p, 0);
+    }
+    strip->show();
+    delay(wait_);
+
+    curIndex += dir;
+    if (curIndex >= strip->numPixels()) {
+      curIndex = strip->numPixels()-1;
+      dir = -1;
+      numBounces++;
+    } else if (curIndex < 0) {
+      curIndex = 0;
+      dir = 1;
+      numBounces++;
+    }
+  }
+}
+
+void Pulse::run() {
+  uint32_t color1 = Wheel(random(0, 255));
+  uint32_t color2 = Wheel(random(0, 255));
+  float mix;
+  int numSteps = 20;
+  for (int step = 0; step < numSteps; step++) {
+    mix = (step * 1.0) / (numSteps * 1.0);
+    uint32_t col = interpolate(0, color1, mix);
+    setAll(col);
+    strip->show();
+    delay(wait_);
+  }
+  for (int step = numSteps; step >= 0; step--) {
+    mix = (step * 1.0) / (numSteps * 1.0);
+    uint32_t col = interpolate(0, color1, mix);
+    setAll(col);
+    strip->show();
+    delay(wait_);
+  }
+  for (int step = 0; step < numSteps; step++) {
+    mix = (step * 1.0) / (numSteps * 1.0);
+    uint32_t col = interpolate(0, color2, mix);
+    setAll(col);
+    strip->show();
+    delay(wait_);
+  }
+  for (int step = numSteps; step >= 0; step--) {
+    mix = (step * 1.0) / (numSteps * 1.0);
+    uint32_t col = interpolate(0, color2, mix);
+    setAll(col);
+    strip->show();
+    delay(wait_);
+  }
 }
