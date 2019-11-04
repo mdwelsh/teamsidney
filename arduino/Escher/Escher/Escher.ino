@@ -2,8 +2,6 @@
 // Matt Welsh <mdw@mdw.la>
 // https://www.teamsidney.com
 
-#define DEBUG_ESP_HTTP_SERVER
-//#define DEBUG_LEDS
 
 #include <vector>
 #include <Wire.h>
@@ -12,12 +10,14 @@
 #include <WiFi.h>
 #include <WiFiMulti.h>
 #include <HTTPClient.h>
-#include <WebServer.h>
 #include <ArduinoJson.h>
 #include "FS.h"
 #include "SPIFFS.h"
 #include "EscherStepper.h"
 #include "EscherParser.h"
+
+// This file defines DEVICE_SECRET, WIFI_NETWORK, and WIFI_PASSWORD.
+#include "EscherDeviceConfig.h"
 
 // Define this to reverse the axes (e.g., if using gears to mate between
 // the steppers and the Etch-a-Sketch).
@@ -67,6 +67,7 @@ HTTPClient http;
 WebServer server(80);
 File fsUploadFile;
 
+// Flash the LED.
 void flashLed(int count) {
   for (int i = 0; i < count; i++) {
     digitalWrite(LED_BUILTIN, HIGH);
@@ -79,6 +80,18 @@ void flashLed(int count) {
 enum EtchState { STATE_INITIALIZING = 0, STATE_IDLE, STATE_READY, STATE_ETCHING, STATE_PAUSED };
 EtchState etchState = STATE_INITIALIZING;
 
+String etchStateString() {
+  switch (etchState) {
+    case STATE_INITIALIZING: return "initializing";
+    case STATE_IDLE: return "idle";
+    case STATE_READY: return "ready";
+    case STATE_ETCHING: return "etching";
+    case STATE_PAUSED: return "paused";
+    default: return "unknown";
+  }
+}
+
+// Initialization code.
 void setup() {  
   Serial.begin(115200);
   Serial.printf("Starting: %s\n", BUILD_VERSION);
@@ -100,30 +113,19 @@ void setup() {
   AFMS.begin(); // Start the bottom shield
 
   // Bring up WiFi.
-  wifiMulti.addAP("theonet_EXT", "juneaudog");
-
-  // Configure HTTP server.
-  server.on("/", handleRoot);
-  server.on("/upload", HTTP_OPTIONS, handleOptions);
-  server.on("/upload", HTTP_POST, handleUploadDone, handleUpload);
-  server.on("/etch", handleEtch);
-  server.on("/pause", handlePause);
-  server.on("/stop", handleStop);
-  server.on("/resume", handleResume);
-  server.on("/ping", handlePing);
-  server.onNotFound(handleNotFound);
+  wifiMulti.addAP(WIFI_NETWORK, WIFI_PASSWORD);
 
   Serial.println("Done with setup()");
 }
 
 // Checkin to Firebase.
+// XXX XXX XXX - Update this to conform to the new protocol.
 void checkin() {
   Serial.print("MAC address ");
   Serial.println(WiFi.macAddress());
   Serial.print("IP address is ");
   Serial.println(WiFi.localIP().toString());
 
-  //String url = "https://firestore.googleapis.com/v1/projects/team-sidney/databases/(default)/documents/escher/root/devices/" + WiFi.macAddress();
   String url = "https://firestore.googleapis.com/v1beta1/projects/team-sidney/databases/(default)/documents:commit";
   http.setTimeout(1000);
   http.addHeader("Content-Type", "application/json");
@@ -140,11 +142,17 @@ void checkin() {
   // First entry - the update operation.
   JsonObject first = writes.createNestedObject();
   JsonObject update = first.createNestedObject("update");
-  String docName = "projects/team-sidney/databases/(default)/documents/escher/root/devices/" + WiFi.macAddress();
+
+  String docName = "projects/team-sidney/databases/(default)/documents/escher/root/secret/"
+                   + DEVICE_SECRET + "/devices/" + WiFi.macAddress();
   update["name"] = docName;
+
+  // Here's the contents of the document we're writing.
   JsonObject fields = update.createNestedObject("fields");
   JsonObject buildversion = fields.createNestedObject("version");
   buildversion["stringValue"] = BUILD_VERSION;
+  JsonObject status = fields.createNestedObject("status");
+  status["stringValue"] = etchStateString();
   JsonObject mac = fields.createNestedObject("mac");
   mac["stringValue"] = WiFi.macAddress();
   JsonObject ip = fields.createNestedObject("ip");
@@ -185,6 +193,84 @@ void checkin() {
   http.end();
 }
 
+// Read desired configuration from Firebase.
+// XXX XXX XXX - Update this to conform to the new protocol.
+void readConfig() {
+  Serial.println("readConfig called");
+
+#ifdef TEST_CONFIG
+  memcpy(&nextConfig, &testConfig, sizeof(nextConfig));
+  return;
+#else
+
+  String url = "https://team-sidney.firebaseio.com/strips/" + WiFi.macAddress() + ".json";
+  http.setTimeout(10000);
+  http.begin(url);
+
+  Serial.print("[HTTP] GET " + url + "\n");
+  int httpCode = http.GET();
+  if (httpCode <= 0) {
+    Serial.printf("[HTTP] failed, error: %s\n", http.errorToString(httpCode).c_str());
+    return;
+  }
+
+  String payload = http.getString();
+  Serial.printf("[HTTP] readConfig response code: %d\n", httpCode);
+  Serial.println(payload);
+
+  bool needsFirmwareUpdate = false;
+
+  // Parse JSON config.
+  if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
+    DeserializationError err = deserializeJson(curConfigDocument, payload);
+    Serial.print("Deserialize returned: ");
+    Serial.println(err.c_str());
+
+    JsonObject cc = curConfigDocument.as<JsonObject>();
+    nextConfig.numPixels = cc["numPixels"];
+    if (nextConfig.numPixels == 0) {
+      nextConfig.numPixels = NUMPIXELS;
+    }
+    nextConfig.dataPin = cc["dataPin"];
+    if (nextConfig.dataPin == 0) {
+      nextConfig.dataPin = DEFAULT_DATA_PIN;
+    }
+    nextConfig.clockPin = cc["clockPin"];
+    if (nextConfig.clockPin == 0) {
+      nextConfig.clockPin = DEFAULT_CLOCK_PIN;
+    }
+    memcpy(nextConfig.mode, (const char *)cc["mode"], sizeof(nextConfig.mode));
+    nextConfig.enabled = (cc["enabled"] == true);
+    nextConfig.speed = cc["speed"];
+    nextConfig.brightness = cc["brightness"];
+    nextConfig.colorChange = cc["colorChange"];
+    nextConfig.color1 = strip->Color(cc["red"], cc["green"], cc["blue"]);
+    nextConfig.color2 = strip->Color(cc["red2"], cc["green2"], cc["blue2"]);
+    memcpy(nextConfig.firmwareVersion, (const char *)cc["version"], sizeof(nextConfig.firmwareVersion));
+
+    // If the firmware version needs to be updated, kick off the update.
+    if (strcmp(nextConfig.firmwareVersion, BUILD_VERSION) &&
+        strcmp(nextConfig.firmwareVersion, "none") &&
+        strcmp(nextConfig.firmwareVersion, "") &&
+        strcmp(nextConfig.firmwareVersion, "current")) {
+      Serial.printf("readConfig: next firmware version %s triggering update\n", nextConfig.firmwareVersion);
+      needsFirmwareUpdate = true;
+    }
+
+    xSemaphoreGive(configMutex);
+  } else {
+    Serial.println("Warning - readConfig() unable to get config mutex");
+  }
+  http.end();
+
+  if (needsFirmwareUpdate) {
+    updateFirmware();
+  }
+#endif // TEST_CONFIG
+}
+
+
+// Dump debug information on the filesystem contents.
 void showFilesystemContents() {
   File root = SPIFFS.open("/");
   File file = root.openNextFile();
@@ -196,30 +282,8 @@ void showFilesystemContents() {
   }
 }
 
-// HTTP request handlers.
-
-void handleRoot() {
-  Serial.println("Server: handleRoot called");
-  server.send(200, "text/html", "<html><body>You're talking to Escher!</body></html>");
-}
-
-void handleNotFound() {
-  Serial.println("Server: handleNotFound called for " + server.uri());
-  Serial.printf("Method: ");
-  switch (server.method()) {
-    case HTTP_GET: Serial.println("GET"); break;
-    case HTTP_POST: Serial.println("POST"); break;
-    default: Serial.println("other"); break;
-  }
-  Serial.printf("Number of args: %d\n", server.args());
-  for (uint8_t i = 0; i < server.args(); i++) {
-    Serial.printf("  arg[%d] = %s\n", i, server.argName(i).c_str());
-    Serial.println(server.arg(i).c_str());
-  }
-  server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
-  server.send(404, "text/plain", "Not found");
-}
-
+// XXX XXX - EXAMPLE CODE ONLY. Use this as basis for fetching
+// gcode document from Firebase into SPIFFS.
 void handleUpload() {
   Serial.println("handleUpload called");
   if (etchState == STATE_ETCHING) {
@@ -251,25 +315,9 @@ void handleUpload() {
   }
 }
 
-void handleUploadDone() {
-  Serial.println("handleUploadDone called");
-  showFilesystemContents();
-  server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
 
-  if (etchState == STATE_ETCHING) {
-    server.send(500, "text/plain", "Upload rejected - already etching");
-  } else {
-    etchState = STATE_READY;
-    server.send(200, "text/plain", "Thanks for the file.");
-  }
-}
-
-void handleOptions() {
-  Serial.println("handleOptions called");
-  server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
-  server.send(200, "text/plain", "OK");
-}
-
+// XXX XXX - EXAMPLE CODE ONLY. Use this as basis for initializing
+// etching.
 void handleEtch() {
   Serial.println("handleEtch called");
   server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
@@ -292,92 +340,7 @@ void handleEtch() {
   }
 }
 
-void handleStop() {
-  Serial.println("handleStop called");
-  server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
-
-  // First check that we are etching.
-  if (etchState != STATE_ETCHING && etchState != STATE_PAUSED) {
-    server.send(500, "text/plain", "State must be etching or paused to stop");
-  } else {
-    server.send(200, "text/plain", "Stopping");
-    myStepper1->release();
-    myStepper2->release();
-    stepper1.disableOutputs();
-    stepper2.disableOutputs();
-    etchState = STATE_IDLE;
-  }
-}
-
-void handlePause() {
-  Serial.println("handlePause called");
-  server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
-
-  // First check that we are etching.
-  if (etchState != STATE_ETCHING) {
-    server.send(500, "text/plain", "State must be etching to pause");
-  } else {
-    server.send(200, "text/plain", "Pausing");
-    myStepper1->release();
-    myStepper2->release();
-    stepper1.disableOutputs();
-    stepper2.disableOutputs();
-    etchState = STATE_PAUSED;
-  }
-}
-
-void handleResume() {
-  Serial.println("handleResume called");
-  server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
-
-  if (etchState != STATE_PAUSED) {
-    server.send(500, "text/plain", "State must be paused to resume etching");
-  } else {
-    server.send(200, "text/plain", "Resuming");
-    stepper1.enableOutputs();
-    stepper2.enableOutputs();
-    etchState = STATE_ETCHING;
-  } 
-}
-
-void handlePing() {
-  Serial.println("handlePing called");
-  server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
-
-  StaticJsonDocument<1024> pingResponseDoc;
-  JsonObject root = pingResponseDoc.to<JsonObject>();
-
-  root["mac"] = WiFi.macAddress();
-  root["ip"] = WiFi.localIP().toString();
-  root["rssi"] = WiFi.RSSI();
-  root["backlash_x"] = String(BACKLASH_X);
-  root["backlash_y"] = String(BACKLASH_Y);
-
-  switch (etchState) {
-    case STATE_INITIALIZING:
-      root["state"] = "initializing";
-      break;
-    case STATE_IDLE:
-      root["state"] = "idle";
-      break;
-    case STATE_READY:
-      root["state"] = "ready";
-      break;
-    case STATE_PAUSED:
-      root["state"] = "paused";
-      break;
-    case STATE_ETCHING:
-      root["state"] = "etching";
-      break;
-    default:
-      root["state"] = "unknown";
-      break;
-  }
-  String payload;
-  serializeJson(root, payload);
-  server.send(200, "application/json", payload);
-}
-
+// Run the Etcher.
 bool runEtcher() {
   // First see if the Escher controller is ready for more.
   if (escher.run()) {
@@ -388,26 +351,20 @@ bool runEtcher() {
   return parser.Feed();
 }
 
-// Main loop.
 unsigned long lastCheckin = 0;
 unsigned long lastBlink = 0;
+String gcodeUrl = "";
+String gcodeHash = "";
 
+// Main loop.
 void loop() {
-#ifdef DEFINE_LEDS
-  if (millis() - lastBlink >= 8000) {
-    lastBlink = millis();
-    flashLed(3 + etchState);
-  }
-#endif
-
   if (etchState == STATE_INITIALIZING) {
     if (wifiMulti.run() != WL_CONNECTED) {
       Serial.println("Waiting for WiFi connection...");
       delay(1000);
       return;
     } else {
-      server.begin();
-      Serial.println("Started HTTP server on http://" + WiFi.localIP().toString() + ":80/");
+      Serial.println("WiFi initialized, setting state to idle.");
       etchState = STATE_IDLE;
     }
     
@@ -417,10 +374,9 @@ void loop() {
       lastCheckin = millis();
       checkin();
     }
-    server.handleClient();   
      
   } else if (etchState == STATE_ETCHING) {
-    // Avoid doing checkins; run etcher but poll for HTTP pause commands.
+    // Avoid doing checkins; only run etcher until done.
     if (!runEtcher()) {
       Serial.println("Etcher completed.");
       myStepper1->release();
@@ -429,6 +385,15 @@ void loop() {
       stepper2.disableOutputs();
       etchState = STATE_IDLE;
     }
-    server.handleClient();
   }
 }
+
+// XXX XXX XXX TODO(mdw)
+// 1. Update checkin() to conform to the new protocol.
+// 2. Update readConfig() to use the new command protocol. Get rid of all ideas of stop/pause/resume.
+// 3. When readConfig() gets a command to start etching, write code to fetch gcode from the given url
+//    and store it in SPIFFS.
+// 4. Modify EscherParser to parse gcode directly.
+
+
+
