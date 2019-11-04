@@ -41,7 +41,7 @@ deviceConfig_t curConfig = (deviceConfig_t) {
 };
 deviceConfig_t nextConfig;
 
-#define TEST_CONFIG // Define for local testing.
+//#define TEST_CONFIG // Define for local testing.
 #ifdef TEST_CONFIG
 // Only used for testing.
 deviceConfig_t testConfig = (deviceConfig_t) {
@@ -132,9 +132,8 @@ void setup() {
     delay(1000);
   }
   wifiMulti.addAP("theonet_EXT", "juneaudog");
-  //wifiMulti.addAP("theonet", "juneaudog");
-
 #endif // TEST_CONFIG
+
   xTaskCreate(TaskCheckin, (const char *)"Checkin", 1024*40, NULL, 2, NULL);
   xTaskCreate(TaskRunConfig, (const char *)"Run config", 1024*40, NULL, 8, NULL);
   Serial.println("Done with setup()");
