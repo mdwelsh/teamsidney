@@ -3,7 +3,7 @@
 
 /* Important - do not commit this file to github!!! */
 
-#define DEVICE_SECRET "reptiles"
+#define DEVICE_SECRET String("reptiles")
 #define WIFI_NETWORK "theonet"
 #define WIFI_PASSWORD "juneaudog"
 

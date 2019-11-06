@@ -64,7 +64,6 @@ const char BUILD_VERSION[] = ("__E5ch3r__ " __DATE__ " " __TIME__ " ___");
 
 WiFiMulti wifiMulti;
 HTTPClient http;
-WebServer server(80);
 File fsUploadFile;
 
 // Flash the LED.
@@ -119,7 +118,6 @@ void setup() {
 }
 
 // Checkin to Firebase.
-// XXX XXX XXX - Update this to conform to the new protocol.
 void checkin() {
   Serial.print("MAC address ");
   Serial.println(WiFi.macAddress());
@@ -191,6 +189,9 @@ void checkin() {
       httpCode, http.errorToString(httpCode).c_str());
   }
   http.end();
+
+  // Now read configuration.
+  readConfig();
 }
 
 // Read desired configuration from Firebase.
@@ -198,15 +199,12 @@ void checkin() {
 void readConfig() {
   Serial.println("readConfig called");
 
-#ifdef TEST_CONFIG
-  memcpy(&nextConfig, &testConfig, sizeof(nextConfig));
-  return;
-#else
-
-  String url = "https://team-sidney.firebaseio.com/strips/" + WiFi.macAddress() + ".json";
-  http.setTimeout(10000);
+  String url = String("https://firestore.googleapis.com/v1beta1/") +
+               String("projects/team-sidney/databases/(default)/documents/escher/root/secret/") +
+               DEVICE_SECRET + String("/devices/") + WiFi.macAddress() + String("/commands/etch");
+  http.setTimeout(1000);
+  http.addHeader("Content-Type", "application/json");
   http.begin(url);
-
   Serial.print("[HTTP] GET " + url + "\n");
   int httpCode = http.GET();
   if (httpCode <= 0) {
@@ -218,13 +216,11 @@ void readConfig() {
   Serial.printf("[HTTP] readConfig response code: %d\n", httpCode);
   Serial.println(payload);
 
-  bool needsFirmwareUpdate = false;
-
+#if 0
   // Parse JSON config.
-  if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
-    DeserializationError err = deserializeJson(curConfigDocument, payload);
-    Serial.print("Deserialize returned: ");
-    Serial.println(err.c_str());
+  DeserializationError err = deserializeJson(curConfigDocument, payload);
+  Serial.print("Deserialize returned: ");
+  Serial.println(err.c_str());
 
     JsonObject cc = curConfigDocument.as<JsonObject>();
     nextConfig.numPixels = cc["numPixels"];
@@ -261,12 +257,8 @@ void readConfig() {
   } else {
     Serial.println("Warning - readConfig() unable to get config mutex");
   }
+#endif
   http.end();
-
-  if (needsFirmwareUpdate) {
-    updateFirmware();
-  }
-#endif // TEST_CONFIG
 }
 
 
@@ -282,6 +274,7 @@ void showFilesystemContents() {
   }
 }
 
+#if 0
 // XXX XXX - EXAMPLE CODE ONLY. Use this as basis for fetching
 // gcode document from Firebase into SPIFFS.
 void handleUpload() {
@@ -339,6 +332,7 @@ void handleEtch() {
     etchState = STATE_IDLE;
   }
 }
+#endif
 
 // Run the Etcher.
 bool runEtcher() {
