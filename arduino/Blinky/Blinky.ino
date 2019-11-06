@@ -587,7 +587,7 @@ void checkin() {
     JsonObject curConfig = curConfigDocument.as<JsonObject>(); 
     if (!curConfig.isNull()) {
      JsonObject checkinConfig = checkinPayload.createNestedObject("config");
-     checkinConfig.copyFrom(curConfig);
+     checkinConfig = curConfig;
     }
     serializeJson(checkinPayload, payload);
     xSemaphoreGive(configMutex);
