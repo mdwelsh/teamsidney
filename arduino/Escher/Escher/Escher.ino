@@ -2,7 +2,6 @@
 // Matt Welsh <mdw@mdw.la>
 // https://www.teamsidney.com
 
-
 #include <vector>
 #include <Wire.h>
 #include <AccelStepper.h>
@@ -78,6 +77,7 @@ void flashLed(int count) {
 
 enum EtchState { STATE_INITIALIZING = 0, STATE_IDLE, STATE_READY, STATE_ETCHING, STATE_PAUSED };
 EtchState etchState = STATE_INITIALIZING;
+String curFilename = String("");
 
 String etchStateString() {
   switch (etchState) {
@@ -189,15 +189,37 @@ void checkin() {
       httpCode, http.errorToString(httpCode).c_str());
   }
   http.end();
-
-  // Now read configuration.
-  readConfig();
 }
 
-// Read desired configuration from Firebase.
-// XXX XXX XXX - Update this to conform to the new protocol.
-void readConfig() {
-  Serial.println("readConfig called");
+// Download the given file from Firebase Storage and save it to the local filesystem.
+bool downloadGcodeFile(const char* filename) {
+  // TODO(mdw) - Implement this.
+}
+
+
+// Start etching the currently downloaded file.
+bool startEtching() {
+  if (parser.Open("/file.gcode")) {
+    server.send(200, "text/plain", "Etching started.");
+    stepper1.setCurrentPosition(0);
+    stepper2.setCurrentPosition(0);
+    stepper1.enableOutputs();
+    stepper2.enableOutputs();
+    etchState = STATE_ETCHING;
+    return true;
+  } else {
+    Serial.println("startEtching - cannot open /file.gcode");
+    return false;
+  }
+}
+
+// Read command from Firebase.
+bool readCommand() {
+  Serial.println("readCommand called");
+  if (etchState != STATE_IDLE) {
+    Serial.printf("readCommand - state is %s, expected idle\n", etchStateString());
+    return false;
+  }
 
   String url = String("https://firestore.googleapis.com/v1beta1/") +
                String("projects/team-sidney/databases/(default)/documents/escher/root/secret/") +
@@ -209,58 +231,71 @@ void readConfig() {
   int httpCode = http.GET();
   if (httpCode <= 0) {
     Serial.printf("[HTTP] failed, error: %s\n", http.errorToString(httpCode).c_str());
-    return;
+    return false;
   }
 
   String payload = http.getString();
-  Serial.printf("[HTTP] readConfig response code: %d\n", httpCode);
+  Serial.printf("[HTTP] readCommand response code: %d\n", httpCode);
   Serial.println(payload);
-
-#if 0
-  // Parse JSON config.
-  DeserializationError err = deserializeJson(curConfigDocument, payload);
-  Serial.print("Deserialize returned: ");
-  Serial.println(err.c_str());
-
-    JsonObject cc = curConfigDocument.as<JsonObject>();
-    nextConfig.numPixels = cc["numPixels"];
-    if (nextConfig.numPixels == 0) {
-      nextConfig.numPixels = NUMPIXELS;
-    }
-    nextConfig.dataPin = cc["dataPin"];
-    if (nextConfig.dataPin == 0) {
-      nextConfig.dataPin = DEFAULT_DATA_PIN;
-    }
-    nextConfig.clockPin = cc["clockPin"];
-    if (nextConfig.clockPin == 0) {
-      nextConfig.clockPin = DEFAULT_CLOCK_PIN;
-    }
-    memcpy(nextConfig.mode, (const char *)cc["mode"], sizeof(nextConfig.mode));
-    nextConfig.enabled = (cc["enabled"] == true);
-    nextConfig.speed = cc["speed"];
-    nextConfig.brightness = cc["brightness"];
-    nextConfig.colorChange = cc["colorChange"];
-    nextConfig.color1 = strip->Color(cc["red"], cc["green"], cc["blue"]);
-    nextConfig.color2 = strip->Color(cc["red2"], cc["green2"], cc["blue2"]);
-    memcpy(nextConfig.firmwareVersion, (const char *)cc["version"], sizeof(nextConfig.firmwareVersion));
-
-    // If the firmware version needs to be updated, kick off the update.
-    if (strcmp(nextConfig.firmwareVersion, BUILD_VERSION) &&
-        strcmp(nextConfig.firmwareVersion, "none") &&
-        strcmp(nextConfig.firmwareVersion, "") &&
-        strcmp(nextConfig.firmwareVersion, "current")) {
-      Serial.printf("readConfig: next firmware version %s triggering update\n", nextConfig.firmwareVersion);
-      needsFirmwareUpdate = true;
-    }
-
-    xSemaphoreGive(configMutex);
-  } else {
-    Serial.println("Warning - readConfig() unable to get config mutex");
-  }
-#endif
   http.end();
-}
 
+  // Now, delete the etch document from Firestore, since even if there's an
+  // error from this point forward, we don't want to process it again.
+  http.setTimeout(1000);
+  http.addHeader("Content-Type", "application/json");
+  http.begin(url);
+  Serial.print("[HTTP] DELETE " + url + "\n");
+  int httpCode = http.DELETE();
+  if (httpCode <= 0) {
+    Serial.printf("[HTTP] failed, error: %s\n", http.errorToString(httpCode).c_str());
+    return false;
+  }
+
+  String payload = http.getString();
+  Serial.printf("[HTTP] readCommand delete response code: %d\n", httpCode);
+  Serial.println(payload);
+  http.end();
+
+  // Parse JSON object.
+  StaticJsonDocument<1024> commandDoc;
+  DeserializationError err = deserializeJson(commandDoc, payload);
+  if (err) {
+    Serial.println("readCommand - deserialize error:");
+    Serial.println(err.c_str());
+    return false;
+  }
+
+  JsonObject command = commandDoc.as<JsonObject>();
+  if (!command.containsKey("command") || !command.containsKey("filename") || !command.containsKey("created")) {
+    Serial.println("readCommand - command doc missing required keys");
+    return false;
+  }
+  String commandStr = command["command"];
+  if (commandStr.equals("prepare")) {
+    const char* filename = config["filename"];
+    if (!curFilename.equals(filename)) {
+      // New file to download, go grab it.
+      if (!downloadGcodeFile(filename)) {
+        Serial.println("readCommand - got error downloading file: " + filename);
+        return false;
+      }
+      etchState = STATE_READY;
+      return true;
+    }
+  } else if (commandStr.equals("etch")) {
+    if (!curFilename.equals(filename)) {
+      Serial.printf("readCommand - Got etch command with different filename %s than %s\n", curFilename, filename);
+      return;
+    }
+    return startEtching();
+
+  } else {
+    Serial.printf("readCommand - Bad command %s\n", commandStr);
+    return false;
+  }
+  Serial.println("readCommand - Should never get here");
+  return false;
+}
 
 // Dump debug information on the filesystem contents.
 void showFilesystemContents() {
@@ -362,13 +397,26 @@ void loop() {
       etchState = STATE_IDLE;
     }
     
-  } else if (etchState == STATE_IDLE || etchState == STATE_READY || etchState == STATE_PAUSED) {
-    // Do periodic checkins.
+  } else if (etchState == STATE_IDLE) {
+    // Poll every 30 sec.
     if (millis() - lastCheckin >= 10000) {
       lastCheckin = millis();
       checkin();
+      if (!readCommand()) {
+        Serial.println("readCommand returned error - resetting to idle state");
+        etchState = STATE_IDLE;
+      }
     }
-     
+  } else if (etchState == STATE_READY) {
+    // Poll more frequently.
+    if (millis() - lastCheckin >= 1000) {
+      lastCheckin = millis();
+      checkin();
+      if (!readCommand()) {
+        Serial.println("readCommand returned error - resetting to idle state");
+        etchState = STATE_IDLE;
+      }
+    }
   } else if (etchState == STATE_ETCHING) {
     // Avoid doing checkins; only run etcher until done.
     if (!runEtcher()) {
@@ -383,9 +431,7 @@ void loop() {
 }
 
 // XXX XXX XXX TODO(mdw)
-// 1. Update checkin() to conform to the new protocol.
-// 2. Update readConfig() to use the new command protocol. Get rid of all ideas of stop/pause/resume.
-// 3. When readConfig() gets a command to start etching, write code to fetch gcode from the given url
+// 3. When readCommand() gets a command to start etching, write code to fetch gcode from the given url
 //    and store it in SPIFFS.
 // 4. Modify EscherParser to parse gcode directly.
 
