@@ -11,7 +11,7 @@
 class EscherParser {
   public:
   EscherParser(EscherStepper &escher) :
-    escher_(escher), stopped_(false), cIndex_(0) {}
+    escher_(escher), stopped_(false), cIndex_(0), last_x_(0), last_y_(0) {}
 
   bool Open(const char *filename);
   bool Feed();
@@ -25,6 +25,8 @@ class EscherParser {
   bool stopped_;
   char curCommand_[MAX_COMMAND_LINE_LENGTH];
   char cIndex_;
+  int last_x_;
+  int last_y_;
 };
 
 #endif _ESCHERPARSER_H
