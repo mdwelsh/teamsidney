@@ -77,7 +77,7 @@ void flashLed(int count) {
 
 enum EtchState { STATE_INITIALIZING = 0, STATE_IDLE, STATE_READY, STATE_ETCHING, STATE_PAUSED };
 EtchState etchState = STATE_INITIALIZING;
-String curFilename = String("");
+String curGcodeUrl = String("");
 
 String etchStateString() {
   switch (etchState) {
@@ -178,37 +178,50 @@ void checkin() {
   String payload;
   serializeJson(root, payload);
 
-  Serial.print("[HTTP] POST " + url + "\n");
+  Serial.print("[checkin] POST " + url + "\n");
   Serial.print(payload + "\n");
 
   int httpCode = http.sendRequest("POST", payload);
   if (httpCode == 200) {
-    Serial.printf("[HTTP] Checkin response code: %d\n", httpCode);
+    Serial.printf("[checkin] response code: %d\n", httpCode);
   } else {
-    Serial.printf("[HTTP] failed, status code %d: %s\n",
+    Serial.printf("[checkin] failed, status code %d: %s\n",
       httpCode, http.errorToString(httpCode).c_str());
   }
   http.end();
 }
 
 // Download the given file from Firebase Storage and save it to the local filesystem.
-bool downloadGcodeFile(const char* filename) {
-  // TODO(mdw) - Implement this.
-}
+bool downloadGcode(const char* url) {
+  File outFile = SPIFFS.open("/data.gcd");
 
+  http.setTimeout(10000);
+  http.begin(url);
+  Serial.print("[downloadGcode] GET " + url + "\n");
+  int httpCode = http.GET();
+  Serial.printf("[downloadGcode] got response code: %d\n", httpCode);
+  if (httpCode <= 0) {
+    Serial.printf("[downloadGcode] failed, error: %s\n", http.errorToString(httpCode).c_str());
+    return false;
+  }
+  int bytesRead = http.writeToStream(outFile);
+  Serial.printf("[downloadGcode] Wrote %d bytes to /data.gcd\n", bytesRead);
+  http.end();
+  return true;
+}
 
 // Start etching the currently downloaded file.
 bool startEtching() {
-  if (parser.Open("/file.gcode")) {
-    server.send(200, "text/plain", "Etching started.");
+  if (parser.Open("/data.gcd")) {
     stepper1.setCurrentPosition(0);
     stepper2.setCurrentPosition(0);
     stepper1.enableOutputs();
     stepper2.enableOutputs();
+    Serial.println("startEtching - starting");
     etchState = STATE_ETCHING;
     return true;
   } else {
-    Serial.println("startEtching - cannot open /file.gcode");
+    Serial.println("startEtching - cannot open /data.gcd");
     return false;
   }
 }
@@ -216,8 +229,8 @@ bool startEtching() {
 // Read command from Firebase.
 bool readCommand() {
   Serial.println("readCommand called");
-  if (etchState != STATE_IDLE) {
-    Serial.printf("readCommand - state is %s, expected idle\n", etchStateString());
+  if (etchState != STATE_IDLE && etchState != STATE_READY && etchState != STATE_ETCHING) {
+    Serial.printf("readCommand - unexpected state %s\n", etchStateString());
     return false;
   }
 
@@ -227,15 +240,15 @@ bool readCommand() {
   http.setTimeout(1000);
   http.addHeader("Content-Type", "application/json");
   http.begin(url);
-  Serial.print("[HTTP] GET " + url + "\n");
+  Serial.print("[readCommand] GET " + url + "\n");
   int httpCode = http.GET();
   if (httpCode <= 0) {
-    Serial.printf("[HTTP] failed, error: %s\n", http.errorToString(httpCode).c_str());
+    Serial.printf("[readCommand] failed, error: %s\n", http.errorToString(httpCode).c_str());
     return false;
   }
 
   String payload = http.getString();
-  Serial.printf("[HTTP] readCommand response code: %d\n", httpCode);
+  Serial.printf("[readCommand] response code: %d\n", httpCode);
   Serial.println(payload);
   http.end();
 
@@ -244,15 +257,15 @@ bool readCommand() {
   http.setTimeout(1000);
   http.addHeader("Content-Type", "application/json");
   http.begin(url);
-  Serial.print("[HTTP] DELETE " + url + "\n");
+  Serial.print("[readCommand] DELETE " + url + "\n");
   int httpCode = http.DELETE();
   if (httpCode <= 0) {
-    Serial.printf("[HTTP] failed, error: %s\n", http.errorToString(httpCode).c_str());
+    Serial.printf("[readCommand] failed, error: %s\n", http.errorToString(httpCode).c_str());
     return false;
   }
 
   String payload = http.getString();
-  Serial.printf("[HTTP] readCommand delete response code: %d\n", httpCode);
+  Serial.printf("[readCommand] delete response code: %d\n", httpCode);
   Serial.println(payload);
   http.end();
 
@@ -266,16 +279,21 @@ bool readCommand() {
   }
 
   JsonObject command = commandDoc.as<JsonObject>();
-  if (!command.containsKey("command") || !command.containsKey("filename") || !command.containsKey("created")) {
+  if (!command.containsKey("command") || !command.containsKey("url") || !command.containsKey("created")) {
     Serial.println("readCommand - command doc missing required keys");
     return false;
   }
   String commandStr = command["command"];
+
   if (commandStr.equals("prepare")) {
-    const char* filename = config["filename"];
-    if (!curFilename.equals(filename)) {
-      // New file to download, go grab it.
-      if (!downloadGcodeFile(filename)) {
+    if (etchState != STATE_IDLE) {}
+      Serial.printf("readCommand - got prepare command in state %s\n", etchStateString());
+      return false;
+    }
+    const char* gcodeUrl = config["url"];
+    if (!curGcodeUrl.equals(gcodeUrl)) {
+      // New URL to download, go grab it.
+      if (!downloadGcode(gcodeUrl)) {
         Serial.println("readCommand - got error downloading file: " + filename);
         return false;
       }
@@ -283,11 +301,26 @@ bool readCommand() {
       return true;
     }
   } else if (commandStr.equals("etch")) {
-    if (!curFilename.equals(filename)) {
-      Serial.printf("readCommand - Got etch command with different filename %s than %s\n", curFilename, filename);
+    if (etchState != STATE_READY) {}
+      Serial.printf("readCommand - got ready command in state %s\n", etchStateString());
+      return false;
+    }
+    if (!curGcodeUrl.equals(gcodeUrl)) {
+      Serial.printf("readCommand - Got etch command with different URL %s than %s\n", gcodeUrl, curGcodeUrl);
       return;
     }
     return startEtching();
+
+  } else if (commandStr.equals("stop")) {
+    if (etchState != STATE_READY && etchState != STATE_ETCHING) {}
+      Serial.printf("readCommand - got stop command in state %s\n", etchStateString());
+      return false;
+    }
+    if (!curGcodeUrl.equals(gcodeUrl)) {
+      Serial.printf("readCommand - Got stop command with different URL %s than %s\n", gcodeUrl, curGcodeUrl);
+      return;
+    }
+    return stopEtching();
 
   } else {
     Serial.printf("readCommand - Bad command %s\n", commandStr);
@@ -299,6 +332,7 @@ bool readCommand() {
 
 // Dump debug information on the filesystem contents.
 void showFilesystemContents() {
+  Serial.printf("SPIFFS: %d/%d bytes used\n", SPIFFS.usedBytes(), SPIFFS.totalBytes());
   File root = SPIFFS.open("/");
   File file = root.openNextFile();
   while (file) {
@@ -308,66 +342,6 @@ void showFilesystemContents() {
     file = root.openNextFile();
   }
 }
-
-#if 0
-// XXX XXX - EXAMPLE CODE ONLY. Use this as basis for fetching
-// gcode document from Firebase into SPIFFS.
-void handleUpload() {
-  Serial.println("handleUpload called");
-  if (etchState == STATE_ETCHING) {
-    Serial.println("Warning - cannot accept upload while etching.");
-    return;
-  }
-
-  HTTPUpload& upload = server.upload();
-  
-  if (upload.status == UPLOAD_FILE_START) {
-    String filename = upload.filename;
-    if (!filename.startsWith("/")) {
-      filename = "/" + filename;
-    }
-    Serial.printf("handleUpload filename: %s\n", filename.c_str());
-    fsUploadFile = SPIFFS.open(filename, "w");
-    filename = String();
-    
-  } else if (upload.status == UPLOAD_FILE_WRITE) {
-    Serial.printf("handleUpload received %d bytes\n", upload.currentSize);
-    if (fsUploadFile) {
-      fsUploadFile.write(upload.buf, upload.currentSize);
-    }
-  } else if (upload.status == UPLOAD_FILE_END) {
-    if (fsUploadFile) {
-      fsUploadFile.close();
-    }
-    Serial.printf("handleUpload completed write of %d bytes\n", upload.totalSize);
-  }
-}
-
-
-// XXX XXX - EXAMPLE CODE ONLY. Use this as basis for initializing
-// etching.
-void handleEtch() {
-  Serial.println("handleEtch called");
-  server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
-
-  // First check that we are ready.
-  if (!(etchState == STATE_READY)) {
-    server.send(500, "text/plain", "State must be ready to start etching");
-  }
-
-  if (parser.Open("/cmddata.txt")) {
-    server.send(200, "text/plain", "Etching started.");
-    stepper1.setCurrentPosition(0);
-    stepper2.setCurrentPosition(0);
-    stepper1.enableOutputs();
-    stepper2.enableOutputs();
-    etchState = STATE_ETCHING;
-  } else {
-    server.send(500, "text/plain", "No cmddata.txt found -- use /upload first");
-    etchState = STATE_IDLE;
-  }
-}
-#endif
 
 // Run the Etcher.
 bool runEtcher() {
@@ -429,11 +403,3 @@ void loop() {
     }
   }
 }
-
-// XXX XXX XXX TODO(mdw)
-// 3. When readCommand() gets a command to start etching, write code to fetch gcode from the given url
-//    and store it in SPIFFS.
-// 4. Modify EscherParser to parse gcode directly.
-
-
-
