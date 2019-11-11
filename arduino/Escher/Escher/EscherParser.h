@@ -11,7 +11,7 @@
 class EscherParser {
   public:
   EscherParser(EscherStepper &escher) :
-    escher_(escher), stopped_(false), cIndex_(0), last_x_(0), last_y_(0) {}
+    escher_(escher), last_x_(0), last_y_(0), eof_(false) {}
 
   bool Open(const char *filename);
   bool Feed();
@@ -19,14 +19,15 @@ class EscherParser {
   private:
   bool readCommand();
   bool processCommand();
+  void doArc(float posx, float posy, float x, float y, float cx, float cy, bool cw);
+  double atan3(double dy, double dx);
   
-  File file_;
   EscherStepper& escher_;
-  bool stopped_;
+  File file_;
+  bool eof_;
   char curCommand_[MAX_COMMAND_LINE_LENGTH];
-  char cIndex_;
-  int last_x_;
-  int last_y_;
+  float last_x_;
+  float last_y_;
 };
 
 #endif _ESCHERPARSER_H

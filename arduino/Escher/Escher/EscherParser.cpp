@@ -1,3 +1,4 @@
+#include <math.h>
 #include "EscherParser.h"
 
 bool EscherParser::Open(const char *filename) {
@@ -10,52 +11,69 @@ bool EscherParser::Open(const char *filename) {
   return true;
 }
 
+// Try to feed the parser with more Gcode data.
+// Returns false when there's nothing left to process.
 bool EscherParser::Feed() {
+  if (eof_) {
+    return false;
+  }
   // Read a line from the command file.
   if (!readCommand()) {
+    Serial.println("EscherParser::Feed - reached EOF.");
+    // Remove final (0, 0) added by Inkscape Gcode plugin.
+    escher_.pop();
+    eof_ = true;
     return false;
   }
   if (!processCommand()) {
-    Serial.println("WARNING - Unable to process command");
-    Serial.println(curCommand_);
-    // Ignore it
+    Serial.println("EscherParser::Feed - error processing command.");
   }
+  return true;
 }
+
+double EscherParser::atan3(double dy, double dx) {
+   double a = atan2(dy, dx);
+   if (a < 0) {
+     a = (M_PI * 2.0) + a;
+   }
+   return a;
+}
+
+// Precision of arcs in centimeters per segment.
+#define CM_PER_SEGMENT 0.1
 
 // Adapted from:
 //  https://www.marginallyclever.com/2014/03/how-to-improve-the-2-axis-cnc-gcode-interpreter-to-understand-arcs/
-bool EscherParser::doArc(float posx, float posy, float x, float y, float cx, float cy, bool cw) {
+void EscherParser::doArc(float posx, float posy, float x, float y, float cx, float cy, bool cw) {
   float dx = posx - cx;
   float dy = posy - cy;
-  float radius = Math.sqrt((dx*dx)+(dy*dy));
-
-  // XXX MDW STOPPED HERE.
+  float radius = sqrt((dx*dx)+(dy*dy));
 
   // find the sweep of the arc
-  var angle1 = atan3(posy - cy, posx - cx);
-  var angle2 = atan3(y - cy, x - cx);
-  var sweep = angle2 - angle1;
+  float angle1 = atan3(posy - cy, posx - cx);
+  float angle2 = atan3(y - cy, x - cx);
+  float sweep = angle2 - angle1;
 
   if (sweep < 0 && cw) {
-    angle2 += 2.0 * Math.PI;
+    angle2 += 2.0 * M_PI;
   } else if (sweep > 0 && !cw) {
-    angle1 += 2.0 * Math.PI;
+    angle1 += 2.0 * M_PI;
   }
 
   sweep = angle2 - angle1;
 
   // get length of arc
-  var l = Math.abs(sweep) * radius;
-  var num_segments = Math.floor(l / CM_PER_SEGMENT);
+  float l = abs(sweep) * radius;
+  int num_segments = int(l / CM_PER_SEGMENT);
 
-  for (i = 0; i < num_segments; i++) {
+  for (int i = 0; i < num_segments; i++) {
     // interpolate around the arc
-    var fraction = (i * 1.0) / (num_segments * 1.0);
-    var angle3 = (sweep * fraction) + angle1;
+    float fraction = (i * 1.0) / (num_segments * 1.0);
+    float angle3 = (sweep * fraction) + angle1;
 
     // find the intermediate position
-    var nx = cx + Math.cos(angle3) * radius;
-    var ny = cy + Math.sin(angle3) * radius;
+    float nx = cx + cos(angle3) * radius;
+    float ny = cy + sin(angle3) * radius;
 
     // make a line to that intermediate position
     retval.push({x: nx, y: ny});
@@ -63,24 +81,21 @@ bool EscherParser::doArc(float posx, float posy, float x, float y, float cx, flo
 
   // one last line hit the end
   retval.push({x: x, y: y});
-  return retval;
 }
 
-// Read a line from the command file.
+// Read a line from the command file. Returns false if EOF is hit.
+// This means that the last command in the file will be dropped
+// if the line is not newline-terminated.
 bool EscherParser::readCommand() {
   int index = 0;
   while (true) {
     int c = file_.read();
     if (c == -1) {
-      // File finished
-      if (index == 0) {
-        // Reached end of file with no command buffered.
-        return false;
-      } else {
-        return true;
-      }
+      // Hit EOF.
+      return false;
     }
     if (index <= MAX_COMMAND_LINE_LENGTH-1) {
+      // Add the character read to the command.
       curCommand_[index] = c;
       index++;
     }
@@ -99,7 +114,8 @@ bool EscherParser::readCommand() {
   }
 }
 
-// Process the current command.
+// Process the current command. Returns false if there is an error
+// parsing or processing the command.
 bool EscherParser::processCommand() {
   String cmd = String(curCommand_);
 
@@ -120,9 +136,9 @@ bool EscherParser::processCommand() {
     }
     float x = atof(xs+1);
     float y = atof(ys+1);
-    last_x_ = (int)x;
-    last_y_ = (int)y;
-    escher_.push(last_x_, last_y_);
+    escher_.push(x, y);
+    last_x_ = x;
+    last_y_ = y;
     return true;
   }
 
@@ -158,41 +174,9 @@ bool EscherParser::processCommand() {
     if (cmd.startsWith("G03")) {
       cw = true;
     }
-
-
-
-
-
-
-
-
-
-
-  char* command = strtok(curCommand_, " \n");
-
-
-
-  if (!strcmp(command, "START")) {
-    // Do nothing.
-    
-  } else if (!strcmp(command, "MOVE")) {
-    char *xs = strtok(NULL, " \n");
-    char *ys = strtok(NULL, " \n");
-    if (xs == NULL || ys == NULL) {
-      Serial.println("WARNING - MOVE command missing x or y value");
-      Serial.println(curCommand_);
-      return false;
-    }
-    int x = atoi(xs);
-    int y = atoi(ys);
-    escher_.push(x, y);
-    
-  } else if (!strcmp(command, "END")) {
-    // Do nothing.
-    
-  } else {
-    Serial.printf("WARNING - Unrecognized command token %s\n", command);
-    return false;
+    doArc(last_x_, last_y_, x, y, last_x_+i, last_y_+j, cw);
+    return true;
   }
+  // Ignore all other commands.
   return true;
 }

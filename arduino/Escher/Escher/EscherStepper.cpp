@@ -15,7 +15,8 @@ EscherStepper::EscherStepper(
   _backlash_x(backlash_x), _backlash_y(backlash_y),
   _cur_backlash_x(0), _cur_backlash_y(0),
   _last_x(0), _last_y(0),
-  _dir_x(0), _dir_y(0) {}
+  _dir_x(0), _dir_y(0),
+  _last_push_x(0), _last_push_y(0) {}
 
 void EscherStepper::clear() {
   _pending.clear();
@@ -60,10 +61,22 @@ void EscherStepper::moveTo(long x, long y) {
   _mstepper.moveTo(target);
 }
 
-void EscherStepper::push(long x, long y) {
-  //Serial.printf("push %d %d\n", x, y);
-  std::pair<long, long> coord(x, y);
+void EscherStepper::push(float x, float y) {
+  // XXX MDW TODO: Offset adjustment and scaling if needed.
+  long tx = (long)x;
+  long ty = (long)y;
+  // Skip duplicate points.
+  if (tx == _last_push_x && ty != _last_push_y) {
+    return;
+  }
+  std::pair<long, long> coord(tx, ty);
   _pending.push_back(coord);
+  _last_push_x = tx;
+  _last_push_y = ty;
+}
+
+void EscherStepper::pop() {
+  _pending.pop_back();
 }
 
 // Returns true if any steppers still running.
