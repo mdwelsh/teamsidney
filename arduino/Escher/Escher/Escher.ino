@@ -204,6 +204,14 @@ bool downloadGcode(const char* url) {
     Serial.printf("[downloadGcode] failed, error: %s\n", http.errorToString(httpCode).c_str());
     return false;
   }
+
+
+  // XXX MDW STOPPED HERE 
+  // This is returning -10, which is an error for the stream write.
+  // Maybe let's try downloading the full URL contents to memory and writing it by hand,
+  // to see if that works -- maybe I am not using the FS interface correctly.
+
+
   int bytesRead = http.writeToStream(&outFile);
   Serial.printf("[downloadGcode] Wrote %d bytes to /data.gcd\n", bytesRead);
   http.end();
@@ -259,6 +267,12 @@ bool readCommand() {
   Serial.println(payload);
   http.end();
 
+  if (httpCode != 200) {
+    Serial.println("[readCommand] got non-200 response code");
+    return false;
+  }
+
+#if 0
   // Now, delete the etch document from Firestore, since even if there's an
   // error from this point forward, we don't want to process it again.
   http.setTimeout(1000);
@@ -270,11 +284,11 @@ bool readCommand() {
     Serial.printf("[readCommand] failed, error: %s\n", http.errorToString(httpCode).c_str());
     return false;
   }
-
   payload = http.getString();
   Serial.printf("[readCommand] delete response code: %d\n", httpCode);
   Serial.println(payload);
   http.end();
+#endif
 
   // Parse JSON object.
   StaticJsonDocument<1024> commandDoc;
@@ -285,19 +299,26 @@ bool readCommand() {
     return false;
   }
 
-  JsonObject command = commandDoc.as<JsonObject>();
-  if (!command.containsKey("command") || !command.containsKey("url") || !command.containsKey("created")) {
-    Serial.println("readCommand - command doc missing required keys");
+  JsonObject command = commandDoc["fields"].as<JsonObject>();
+  if (!command.containsKey("command")) {
+    Serial.println("readCommand - command doc missing required key command");
     return false;
   }
-  String commandStr = command["command"];
+  String commandStr = command["command"]["stringValue"];
+  Serial.printf("readCommand - commandStr is %s\n", commandStr);
 
   if (commandStr.equals("prepare")) {
-    if (etchState != STATE_IDLE) {
+    if (etchState != STATE_IDLE && etchState != STATE_READY) {
       Serial.printf("readCommand - got prepare command in state %s\n", etchStateString());
       return false;
     }
-    const char* gcodeUrl = command["url"];
+    if (!command.containsKey("url")) {
+      Serial.println("readCommand - prepare command missing required key url");
+      return false;
+    }
+    const char* gcodeUrl = command["url"]["stringValue"];
+    Serial.printf("readCommand - url is %s\n", gcodeUrl);
+    Serial.printf("readCommand - curGcodeUrl is %s\n", curGcodeUrl);
     if (!curGcodeUrl.equals(gcodeUrl)) {
       // New URL to download, go grab it.
       if (!downloadGcode(gcodeUrl)) {
@@ -306,11 +327,19 @@ bool readCommand() {
       }
       curGcodeUrl = gcodeUrl;
       etchState = STATE_READY;
+      showFilesystemContents();
+      return true;
+    } else {
+      Serial.println("readCommand - prepare with same URL, ignoring");
       return true;
     }
   } else if (commandStr.equals("etch")) {
     if (etchState != STATE_READY) {
       Serial.printf("readCommand - got ready command in state %s\n", etchStateString());
+      return false;
+    }
+    if (!command.containsKey("url")) {
+      Serial.println("readCommand - etch command missing required key url");
       return false;
     }
     const char* gcodeUrl = command["url"];
@@ -387,7 +416,7 @@ void loop() {
     }
   } else if (etchState == STATE_READY) {
     // Poll more frequently.
-    if (millis() - lastCheckin >= 1000) {
+    if (millis() - lastCheckin >= 10000) {
       lastCheckin = millis();
       checkin();
       if (!readCommand()) {
