@@ -197,14 +197,14 @@ bool downloadGcode(const char* url) {
 
   http.setTimeout(10000);
   http.begin(url);
-  Serial.print("[downloadGcode] GET " + url + "\n");
+  Serial.printf("[downloadGcode] GET %s\n", url);
   int httpCode = http.GET();
   Serial.printf("[downloadGcode] got response code: %d\n", httpCode);
   if (httpCode <= 0) {
     Serial.printf("[downloadGcode] failed, error: %s\n", http.errorToString(httpCode).c_str());
     return false;
   }
-  int bytesRead = http.writeToStream(outFile);
+  int bytesRead = http.writeToStream(&outFile);
   Serial.printf("[downloadGcode] Wrote %d bytes to /data.gcd\n", bytesRead);
   http.end();
   return true;
@@ -224,6 +224,13 @@ bool startEtching() {
     Serial.println("startEtching - cannot open /data.gcd");
     return false;
   }
+}
+
+void stopEtching() {
+  myStepper1->release();
+  myStepper2->release();
+  stepper1.disableOutputs();
+  stepper2.disableOutputs();
 }
 
 // Read command from Firebase.
@@ -258,13 +265,13 @@ bool readCommand() {
   http.addHeader("Content-Type", "application/json");
   http.begin(url);
   Serial.print("[readCommand] DELETE " + url + "\n");
-  int httpCode = http.DELETE();
+  httpCode = http.sendRequest("DELETE");
   if (httpCode <= 0) {
     Serial.printf("[readCommand] failed, error: %s\n", http.errorToString(httpCode).c_str());
     return false;
   }
 
-  String payload = http.getString();
+  payload = http.getString();
   Serial.printf("[readCommand] delete response code: %d\n", httpCode);
   Serial.println(payload);
   http.end();
@@ -286,42 +293,39 @@ bool readCommand() {
   String commandStr = command["command"];
 
   if (commandStr.equals("prepare")) {
-    if (etchState != STATE_IDLE) {}
+    if (etchState != STATE_IDLE) {
       Serial.printf("readCommand - got prepare command in state %s\n", etchStateString());
       return false;
     }
-    const char* gcodeUrl = config["url"];
+    const char* gcodeUrl = command["url"];
     if (!curGcodeUrl.equals(gcodeUrl)) {
       // New URL to download, go grab it.
       if (!downloadGcode(gcodeUrl)) {
-        Serial.println("readCommand - got error downloading file: " + filename);
+        Serial.printf("readCommand - got error downloading gCode %s\n", gcodeUrl);
         return false;
       }
+      curGcodeUrl = gcodeUrl;
       etchState = STATE_READY;
       return true;
     }
   } else if (commandStr.equals("etch")) {
-    if (etchState != STATE_READY) {}
+    if (etchState != STATE_READY) {
       Serial.printf("readCommand - got ready command in state %s\n", etchStateString());
       return false;
     }
+    const char* gcodeUrl = command["url"];
     if (!curGcodeUrl.equals(gcodeUrl)) {
       Serial.printf("readCommand - Got etch command with different URL %s than %s\n", gcodeUrl, curGcodeUrl);
-      return;
+      return false;
     }
     return startEtching();
-
   } else if (commandStr.equals("stop")) {
-    if (etchState != STATE_READY && etchState != STATE_ETCHING) {}
+    if (etchState != STATE_READY && etchState != STATE_ETCHING) {
       Serial.printf("readCommand - got stop command in state %s\n", etchStateString());
       return false;
     }
-    if (!curGcodeUrl.equals(gcodeUrl)) {
-      Serial.printf("readCommand - Got stop command with different URL %s than %s\n", gcodeUrl, curGcodeUrl);
-      return;
-    }
-    return stopEtching();
-
+    stopEtching();
+    return true;
   } else {
     Serial.printf("readCommand - Bad command %s\n", commandStr);
     return false;
@@ -395,10 +399,7 @@ void loop() {
     // Avoid doing checkins; only run etcher until done.
     if (!runEtcher()) {
       Serial.println("Etcher completed.");
-      myStepper1->release();
-      myStepper2->release();
-      stepper1.disableOutputs();
-      stepper2.disableOutputs();
+      stopEtching();
       etchState = STATE_IDLE;
     }
   }

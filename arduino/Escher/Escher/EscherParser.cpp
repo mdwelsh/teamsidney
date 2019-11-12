@@ -76,11 +76,11 @@ void EscherParser::doArc(float posx, float posy, float x, float y, float cx, flo
     float ny = cy + sin(angle3) * radius;
 
     // make a line to that intermediate position
-    retval.push({x: nx, y: ny});
+    escher_.push(nx, ny);
   }
 
   // one last line hit the end
-  retval.push({x: x, y: y});
+  escher_.push(x, y);
 }
 
 // Read a line from the command file. Returns false if EOF is hit.
@@ -136,6 +136,7 @@ bool EscherParser::processCommand() {
     }
     float x = atof(xs+1);
     float y = atof(ys+1);
+    Serial.printf("EscherParser - line to %f %f\n", x, y);
     escher_.push(x, y);
     last_x_ = x;
     last_y_ = y;
@@ -174,6 +175,7 @@ bool EscherParser::processCommand() {
     if (cmd.startsWith("G03")) {
       cw = true;
     }
+    Serial.printf("EscherParser - doArc %f %f %f %f %f %f cw %d\n", last_x_, last_y_, x, y, last_x_+i, last_y_+j, cw);
     doArc(last_x_, last_y_, x, y, last_x_+i, last_y_+j, cw);
     return true;
   }
