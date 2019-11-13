@@ -75,7 +75,7 @@ void flashLed(int count) {
   }
 }
 
-enum EtchState { STATE_INITIALIZING = 0, STATE_IDLE, STATE_READY, STATE_ETCHING, STATE_PAUSED };
+enum EtchState { STATE_INITIALIZING = 0, STATE_IDLE, STATE_ETCHING };
 EtchState etchState = STATE_INITIALIZING;
 String curGcodeUrl = String("");
 
@@ -83,9 +83,7 @@ String etchStateString() {
   switch (etchState) {
     case STATE_INITIALIZING: return "initializing";
     case STATE_IDLE: return "idle";
-    case STATE_READY: return "ready";
     case STATE_ETCHING: return "etching";
-    case STATE_PAUSED: return "paused";
     default: return "unknown";
   }
 }
@@ -193,8 +191,6 @@ void checkin() {
 
 // Download the given file from Firebase Storage and save it to the local filesystem.
 bool downloadGcode(const char* url) {
-  File outFile = SPIFFS.open("/data.gcd");
-
   http.setTimeout(10000);
   http.begin(url);
   Serial.printf("[downloadGcode] GET %s\n", url);
@@ -204,18 +200,24 @@ bool downloadGcode(const char* url) {
     Serial.printf("[downloadGcode] failed, error: %s\n", http.errorToString(httpCode).c_str());
     return false;
   }
-
-
-  // XXX MDW STOPPED HERE 
-  // This is returning -10, which is an error for the stream write.
-  // Maybe let's try downloading the full URL contents to memory and writing it by hand,
-  // to see if that works -- maybe I am not using the FS interface correctly.
-
-
+  File outFile = SPIFFS.open("/data.gcd", FILE_WRITE);
   int bytesRead = http.writeToStream(&outFile);
-  Serial.printf("[downloadGcode] Wrote %d bytes to /data.gcd\n", bytesRead);
   http.end();
-  return true;
+  outFile.close();
+  if (bytesRead < 0) {
+    Serial.printf("[downloadGcode] Error writing to /data.gcd: %d\n", bytesRead);
+    return false;
+  } else {
+    Serial.printf("[downloadGcode] Wrote %d bytes to /data.gcd:\n", bytesRead);
+    File inFile = SPIFFS.open("/data.gcd", FILE_READ);
+    String data = "";
+    int c;
+    while ((c = inFile.read()) > 0) {
+      data += (char)c;
+    }
+    Serial.println(data);
+    return true;
+  }
 }
 
 // Start etching the currently downloaded file.
@@ -235,6 +237,7 @@ bool startEtching() {
 }
 
 void stopEtching() {
+  Serial.println("stopEtching - stopping");
   myStepper1->release();
   myStepper2->release();
   stepper1.disableOutputs();
@@ -244,7 +247,7 @@ void stopEtching() {
 // Read command from Firebase.
 bool readCommand() {
   Serial.println("readCommand called");
-  if (etchState != STATE_IDLE && etchState != STATE_READY && etchState != STATE_ETCHING) {
+  if (etchState != STATE_IDLE && etchState != STATE_ETCHING) {
     Serial.printf("readCommand - unexpected state %s\n", etchStateString());
     return false;
   }
@@ -307,49 +310,27 @@ bool readCommand() {
   String commandStr = command["command"]["stringValue"];
   Serial.printf("readCommand - commandStr is %s\n", commandStr);
 
-  if (commandStr.equals("prepare")) {
-    if (etchState != STATE_IDLE && etchState != STATE_READY) {
-      Serial.printf("readCommand - got prepare command in state %s\n", etchStateString());
-      return false;
-    }
+  if (commandStr.equals("etch")) {
     if (!command.containsKey("url")) {
-      Serial.println("readCommand - prepare command missing required key url");
+      Serial.println("readCommand - etch command missing required key url");
       return false;
     }
     const char* gcodeUrl = command["url"]["stringValue"];
-    Serial.printf("readCommand - url is %s\n", gcodeUrl);
-    Serial.printf("readCommand - curGcodeUrl is %s\n", curGcodeUrl);
     if (!curGcodeUrl.equals(gcodeUrl)) {
       // New URL to download, go grab it.
       if (!downloadGcode(gcodeUrl)) {
         Serial.printf("readCommand - got error downloading gCode %s\n", gcodeUrl);
         return false;
       }
-      curGcodeUrl = gcodeUrl;
-      etchState = STATE_READY;
       showFilesystemContents();
-      return true;
+      curGcodeUrl = gcodeUrl;
+      return startEtching();
     } else {
-      Serial.println("readCommand - prepare with same URL, ignoring");
+      Serial.println("readCommand - etch with same URL, ignoring");
       return true;
     }
-  } else if (commandStr.equals("etch")) {
-    if (etchState != STATE_READY) {
-      Serial.printf("readCommand - got ready command in state %s\n", etchStateString());
-      return false;
-    }
-    if (!command.containsKey("url")) {
-      Serial.println("readCommand - etch command missing required key url");
-      return false;
-    }
-    const char* gcodeUrl = command["url"];
-    if (!curGcodeUrl.equals(gcodeUrl)) {
-      Serial.printf("readCommand - Got etch command with different URL %s than %s\n", gcodeUrl, curGcodeUrl);
-      return false;
-    }
-    return startEtching();
   } else if (commandStr.equals("stop")) {
-    if (etchState != STATE_READY && etchState != STATE_ETCHING) {
+    if (etchState != STATE_ETCHING) {
       Serial.printf("readCommand - got stop command in state %s\n", etchStateString());
       return false;
     }
@@ -405,17 +386,6 @@ void loop() {
     }
     
   } else if (etchState == STATE_IDLE) {
-    // Poll every 30 sec.
-    if (millis() - lastCheckin >= 10000) {
-      lastCheckin = millis();
-      checkin();
-      if (!readCommand()) {
-        Serial.println("readCommand returned error - resetting to idle state");
-        etchState = STATE_IDLE;
-      }
-    }
-  } else if (etchState == STATE_READY) {
-    // Poll more frequently.
     if (millis() - lastCheckin >= 10000) {
       lastCheckin = millis();
       checkin();

@@ -57,7 +57,7 @@ void EscherStepper::moveTo(long x, long y) {
     _dir_y = diry;
   }
 
-  //Serial.printf("EscherStepper: moving to %d %d\n", target[0], target[1]);
+  Serial.printf("EscherStepper: moving to %d %d\n", target[0], target[1]);
   _mstepper.moveTo(target);
 }
 
