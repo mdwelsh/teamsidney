@@ -11,6 +11,12 @@ bool EscherParser::Open(const char *filename) {
   return true;
 }
 
+void EscherParser::Parse() {
+  // Parse the gCode document and send it to the EscherStepper.
+  while (Feed()) {}
+  escher_.commit();
+}
+
 // Try to feed the parser with more Gcode data.
 // Returns false when there's nothing left to process.
 bool EscherParser::Feed() {
