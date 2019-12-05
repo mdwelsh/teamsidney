@@ -30,10 +30,8 @@
 #endif
 
 // These should be calibrated for each device.
-//#define BACKLASH_X 10
-//#define BACKLASH_Y 15
-#define BACKLASH_X 3
-#define BACKLASH_Y 3
+#define BACKLASH_X 10
+#define BACKLASH_Y 15
 #define MAX_SPEED 100.0
 
 Adafruit_MotorShield AFMS = Adafruit_MotorShield();
@@ -315,10 +313,51 @@ bool readCommand() {
       Serial.println("readCommand - etch command missing required key url");
       return false;
     }
-    const char* gcodeUrl = command["url"]["stringValue"];
+    String gcodeUrl = command["url"]["stringValue"];
+    if (gcodeUrl.isEmpty()) {
+      // Empty URL means to stop etching.
+      if (etchState != STATE_ETCHING) {
+        Serial.printf("readCommand - got stop command in state %s\n", etchStateString());
+        return false;
+      }
+      stopEtching();
+      return true;
+    }
+
+    int offsetLeft = 0;
+    int offsetBottom = 0;
+    float zoom = 1.0;
+    bool scaleToFit = false;
+    long backlashX = BACKLASH_X;
+    long backlashY = BACKLASH_Y;
+    if (command.containsKey("offsetLeft")) {
+      offsetLeft = command["offsetLeft"]["integerValue"];
+    }
+    if (command.containsKey("offsetBottom")) {
+      offsetBottom = command["offsetBottom"]["integerValue"];
+    }
+    if (command.containsKey("zoom")) {
+      zoom = command["zoom"]["doubleValue"];
+    }
+    if (command.containsKey("scaleToFit")) {
+      scaleToFit = command["scaleToFit"]["booleanValue"];
+    }
+    if (command.containsKey("backlashX")) {
+      backlashX = command["backlashX"]["integerValue"];
+    }
+    if (command.containsKey("backlashY")) {
+      backlashY = command["backlashY"]["integerValue"];
+    }
+    escher.setOffsetLeft(offsetLeft);
+    escher.setOffsetBottom(offsetBottom);
+    escher.setZoom(zoom);
+    escher.setScaleToFit(scaleToFit);
+    escher.setBacklashX(backlashX);
+    escher.setBacklashY(backlashY);
+
     if (!curGcodeUrl.equals(gcodeUrl)) {
       // New URL to download, go grab it.
-      if (!downloadGcode(gcodeUrl)) {
+      if (!downloadGcode(gcodeUrl.c_str())) {
         Serial.printf("readCommand - got error downloading gCode %s\n", gcodeUrl);
         return false;
       }
@@ -329,13 +368,6 @@ bool readCommand() {
       Serial.println("readCommand - etch with same URL, ignoring");
       return true;
     }
-  } else if (commandStr.equals("stop")) {
-    if (etchState != STATE_ETCHING) {
-      Serial.printf("readCommand - got stop command in state %s\n", etchStateString());
-      return false;
-    }
-    stopEtching();
-    return true;
   } else {
     Serial.printf("readCommand - Bad command %s\n", commandStr);
     return false;

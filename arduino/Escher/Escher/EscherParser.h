@@ -28,6 +28,7 @@ class EscherParser {
   char curCommand_[MAX_COMMAND_LINE_LENGTH];
   float last_x_;
   float last_y_;
+
 };
 
 #endif _ESCHERPARSER_H
