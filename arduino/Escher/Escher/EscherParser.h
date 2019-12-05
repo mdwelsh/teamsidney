@@ -14,6 +14,7 @@ class EscherParser {
     escher_(escher), last_x_(0), last_y_(0), eof_(false) {}
 
   bool Open(const char *filename);
+  void Parse();
   bool Feed();
 
   private:

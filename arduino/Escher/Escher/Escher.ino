@@ -30,6 +30,8 @@
 #endif
 
 // These should be calibrated for each device.
+#define ETCH_WIDTH 600
+#define ETCH_HEIGHT 400
 #define BACKLASH_X 10
 #define BACKLASH_Y 15
 #define MAX_SPEED 100.0
@@ -53,7 +55,7 @@ void backwardstep2() {
 AccelStepper stepper1(forwardstep1, backwardstep1);
 AccelStepper stepper2(forwardstep2, backwardstep2);
 MultiStepper mstepper;
-EscherStepper escher(mstepper, BACKLASH_X, BACKLASH_Y);
+EscherStepper escher(mstepper, ETCH_WIDTH, ETCH_HEIGHT, BACKLASH_X, BACKLASH_Y);
 EscherParser parser(escher);
 
 // We use some magic strings in this constant to ensure that we can easily strip it out of the binary.
@@ -221,6 +223,7 @@ bool downloadGcode(const char* url) {
 // Start etching the currently downloaded file.
 bool startEtching() {
   if (parser.Open("/data.gcd")) {
+    parser.Parse();
     stepper1.setCurrentPosition(0);
     stepper2.setCurrentPosition(0);
     stepper1.enableOutputs();
@@ -328,6 +331,8 @@ bool readCommand() {
     int offsetBottom = 0;
     float zoom = 1.0;
     bool scaleToFit = false;
+    long etchWidth = ETCH_WIDTH;
+    long etchHeight = ETCH_HEIGHT;
     long backlashX = BACKLASH_X;
     long backlashY = BACKLASH_Y;
     if (command.containsKey("offsetLeft")) {
@@ -342,16 +347,25 @@ bool readCommand() {
     if (command.containsKey("scaleToFit")) {
       scaleToFit = command["scaleToFit"]["booleanValue"];
     }
+    if (command.containsKey("etchWidth")) {
+      etchWidth = command["etchWidth"]["integerValue"];
+    }
+    if (command.containsKey("etchHeight")) {
+      etchHeight = command["etchHeight"]["integerValue"];
+    }
     if (command.containsKey("backlashX")) {
       backlashX = command["backlashX"]["integerValue"];
     }
     if (command.containsKey("backlashY")) {
       backlashY = command["backlashY"]["integerValue"];
     }
+    escher.reset();
     escher.setOffsetLeft(offsetLeft);
     escher.setOffsetBottom(offsetBottom);
     escher.setZoom(zoom);
     escher.setScaleToFit(scaleToFit);
+    escher.setEtchWidth(etchWidth);
+    escher.setEtchHeight(etchHeight);
     escher.setBacklashX(backlashX);
     escher.setBacklashY(backlashY);
 
@@ -391,13 +405,7 @@ void showFilesystemContents() {
 
 // Run the Etcher.
 bool runEtcher() {
-  // First see if the Escher controller is ready for more.
-  if (escher.run()) {
-    return true;
-  }
-
-  // Feed more commands to Escher. Returns false when file is complete.
-  return parser.Feed();
+  return escher.run();
 }
 
 unsigned long lastCheckin = 0;

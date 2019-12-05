@@ -9,7 +9,7 @@
 
 class EscherStepper {
   public:
-  EscherStepper(MultiStepper& mstepper, long backlash_x, long backlash_y);
+  EscherStepper(MultiStepper& mstepper, long etch_width, long etch_height, long backlash_x, long backlash_y);
 
   // Push a new raw point.
   void push(float x, float y);
@@ -22,6 +22,8 @@ class EscherStepper {
   // Reset the state of the stepper.
   void reset();
   // Set parameters.
+  void setEtchWidth(long etch_width) { etch_width_ = etch_width; }
+  void setEtchHeight(long etch_height) { etch_height_ = etch_height; }
   void setBacklashX(long backlash_x) { backlash_x_ = backlash_x; }
   void setBacklashY(long backlash_y) { backlash_y_ = backlash_y; }
   void setOffsetLeft(int offsetLeft) { offsetLeft_ = offsetLeft; }
@@ -31,6 +33,7 @@ class EscherStepper {
 
   private:
   void moveTo(long x, long y);
+  void scaleToFit();
 
   MultiStepper& mstepper_;
 
@@ -42,7 +45,8 @@ class EscherStepper {
 
   bool committed_;
   bool stopped_;
-  long backlash_x_, backlash_y_,
+  long etch_width_, etch_height_,
+       backlash_x_, backlash_y_,
        cur_backlash_x_, cur_backlash_y_,
        last_x_, last_y_,
        dir_x_, dir_y_,

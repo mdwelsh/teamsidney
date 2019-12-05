@@ -6,7 +6,7 @@
 #define DEVICE_SECRET String("reptiles")
 //#define WIFI_NETWORK "theonet"
 //#define WIFI_PASSWORD "juneaudog"
-#define WIFI_NETWORK "VW-MEM"
-#define WIFI_PASSWORD "W@tchMe!"
+#define WIFI_NETWORK "XNOR.AI Guest"
+#define WIFI_PASSWORD "TEAwithm1lk!!"
 
 #endif // ESCHER_DEVICE_CONFIG_H

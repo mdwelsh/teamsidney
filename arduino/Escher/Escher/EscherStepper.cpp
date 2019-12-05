@@ -1,5 +1,6 @@
 #include "EscherStepper.h"
 
+#include <float.h>
 #include <vector>
 #include <Wire.h>
 #include <AccelStepper.h>
@@ -9,9 +10,12 @@
 
 EscherStepper::EscherStepper(
     MultiStepper &mstepper,
+    long etch_width,
+    long etch_height,
     long backlash_x,
     long backlash_y) :
   mstepper_(mstepper), stopped_(true),
+  etch_width_(etch_width), etch_height_(etch_height),
   backlash_x_(backlash_x), backlash_y_(backlash_y),
   cur_backlash_x_(0), cur_backlash_y_(0),
   last_x_(0), last_y_(0),
@@ -115,11 +119,53 @@ bool EscherStepper::run() {
 
 // Determine offset_x_, offset_y_, and scale_ based on gcode points.
 void EscherStepper::scaleToFit() {
-  // TODO(mdw) - Fill this in.
+  // First, get bounding dimensions of the waypoints.
+  float minx = FLT_MAX;
+  float maxx = 0.0;
+  float miny = FLT_MAX;
+  float maxy = 0.0;
+  for (auto it = std::begin(raw_); it != std::end(raw_); ++it) {
+    float x = it->first;
+    float y = it->second;
+    if (x < minx) {
+      minx = x;
+    }
+    if (x > maxx) {
+      maxx = x;
+    }
+    if (y < miny) {
+      miny = y;
+    }
+    if (y > maxy) {
+      maxy = y;
+    }
+  }
+  // Translate gCode object to lower left corner.
+  for (auto it = begin(raw_); it != end(raw_); ++it) {
+    it->first -= minx;
+    it->second -= miny;
+  }
+  // Calculate scaling factor and offsets.
+  float aspect_ratio = (etch_width_ * 1.0) / (etch_height_ * 1.0);
+  float dx = maxx - minx;
+  float dy = maxy - miny;
+  if ((dx / aspect_ratio) > dy) {
+    // The object is wider than it is tall.
+    scale_ = etch_width_ / dx;
+    offset_x_ = 0.0;
+    offset_y_ = (etch_height_ - (scale_ * dy)) / 2.0;
+  } else {
+    // The object is taller than it is wide.
+    scale_ = etch_height_ / dy;
+    offset_x_ = (etch_width_ - (scale_ * dx)) / 2.0;
+    offset_y_ = 0.0;
+  }
+  Serial.printf("scaleToFit: setting scale_ %f offset_x %f offset_y %f\n", scale_, offset_x_, offset_y_);
 }
 
 // Convert the raw_ points to stepper coordinates in pending_.
 void EscherStepper::commit() {
+  Serial.printf("commit: zoom_ %f offsetLeft_ %d offsetBottom_ %d\n", zoom_, offsetLeft_, offsetBottom_);
   offset_x_ = 0;
   offset_y_ = 0;
   scale_ = 1.0;
