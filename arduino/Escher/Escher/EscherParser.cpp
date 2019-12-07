@@ -30,9 +30,16 @@ void EscherParser::Prepare() {
   escher_.computeScaleFactors();
   file_.close();
   Open(filename_);
+  last_x_ = 0;
+  last_y_ = 0;
 }
 
 void EscherParser::moveTo(float x, float y) {
+  if (x == last_x_ && y == last_y_) {
+    return;
+  }
+  last_x_ = x;
+  last_y_ = y;
   if (preparing_) {
     if (x < minx_) {
       minx_ = x;
@@ -108,7 +115,11 @@ void EscherParser::doArc(float posx, float posy, float x, float y, float cx, flo
 
   // get length of arc
   float l = abs(sweep) * radius;
-  int num_segments = int(l / CM_PER_SEGMENT);
+  int num_segments = floor(l / CM_PER_SEGMENT);
+
+  Serial.printf("doArc: posx %f posy %f x %f y %f cx %f cy %f cw %f\n", posx, posy, x, y, cx, cy, cw);
+  Serial.printf("doArc: dx %f dy %f radius %f angle1 %f angle2 %f sweep %f\n", dx, dy, radius, angle1, angle2, sweep);
+  Serial.printf("doArc: l %f num_segments %d\n", l, num_segments);
 
   for (int i = 0; i < num_segments; i++) {
     // interpolate around the arc
@@ -165,6 +176,7 @@ bool EscherParser::readCommand() {
 // parsing or processing the command.
 bool EscherParser::processCommand() {
   String cmd = String(curCommand_);
+  Serial.printf("Processing: %s\n", cmd.c_str());
 
   // Line command.
   if (cmd.startsWith("G00") || cmd.startsWith("G01")) {
@@ -184,8 +196,6 @@ bool EscherParser::processCommand() {
     float x = atof(xs+1);
     float y = atof(ys+1);
     moveTo(x, y);
-    last_x_ = x;
-    last_y_ = y;
     return true;
   }
 
