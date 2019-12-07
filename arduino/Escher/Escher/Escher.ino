@@ -223,7 +223,7 @@ bool downloadGcode(const char* url) {
 // Start etching the currently downloaded file.
 bool startEtching() {
   if (parser.Open("/data.gcd")) {
-    parser.Parse();
+    parser.Prepare();
     stepper1.setCurrentPosition(0);
     stepper2.setCurrentPosition(0);
     stepper1.enableOutputs();
@@ -405,7 +405,13 @@ void showFilesystemContents() {
 
 // Run the Etcher.
 bool runEtcher() {
-  return escher.run();
+  // First see if the Escher controller is ready for more.
+  if (escher.run()) {
+    return true;
+  }
+
+  // Feed more commands to Escher. Returns false when file is complete.
+  return parser.Feed();
 }
 
 unsigned long lastCheckin = 0;

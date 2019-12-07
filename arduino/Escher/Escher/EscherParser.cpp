@@ -1,20 +1,54 @@
+#include <float.h>
 #include <math.h>
 #include "EscherParser.h"
 
 bool EscherParser::Open(const char *filename) {
-  if (!SPIFFS.exists(filename)) {
-    Serial.printf("ERROR - command file %s does not exist\n", filename);
+  filename_ = (char *)filename;
+  if (!SPIFFS.exists(filename_)) {
+    Serial.printf("ERROR - gcode file %s does not exist\n", filename_);
     return false;
   }
-  file_ = SPIFFS.open(filename);
-  Serial.printf("EscherParser opened %s\n", filename);
+  file_ = SPIFFS.open(filename_);
+  Serial.printf("EscherParser opened %s\n", filename_);
+  eof_ = false;
   return true;
 }
 
-void EscherParser::Parse() {
-  // Parse the gCode document and send it to the EscherStepper.
+void EscherParser::Prepare() {
+  minx_ = FLT_MAX;
+  maxx_ = 0.0;
+  miny_ = FLT_MAX;
+  maxy_ = 0.0;
+  preparing_ = true;
   while (Feed()) {}
-  escher_.commit();
+  preparing_ = false;
+  Serial.printf("Prepare: Got minx %f maxx %f miny %f maxy %f\n", minx_, maxx_, miny_, maxy_);
+  escher_.setMinX(minx_);
+  escher_.setMaxX(maxx_);
+  escher_.setMinY(miny_);
+  escher_.setMaxY(maxy_);
+  escher_.computeScaleFactors();
+  file_.close();
+  Open(filename_);
+}
+
+void EscherParser::moveTo(float x, float y) {
+  if (preparing_) {
+    if (x < minx_) {
+      minx_ = x;
+    }
+    if (x > maxx_) {
+      maxx_ = x;
+    }
+    if (y < miny_) {
+      miny_ = y;
+    }
+    if (y > maxy_) {
+      maxy_ = y;
+    }
+  } else {
+    escher_.push(x, y);
+  }
 }
 
 // Try to feed the parser with more Gcode data.
@@ -27,10 +61,13 @@ bool EscherParser::Feed() {
   if (!readCommand()) {
     Serial.println("EscherParser::Feed - reached EOF.");
     // Remove final (0, 0) added by Inkscape Gcode plugin.
-    escher_.pop();
+    if (!preparing_) {
+      escher_.pop();
+    }
     eof_ = true;
     return false;
   }
+  //Serial.printf("Feed: Command %s\n", curCommand_);
   if (!processCommand()) {
     Serial.println("EscherParser::Feed - error processing command.");
   }
@@ -46,11 +83,12 @@ double EscherParser::atan3(double dy, double dx) {
 }
 
 // Precision of arcs in centimeters per segment.
-#define CM_PER_SEGMENT 0.1
+#define CM_PER_SEGMENT 5.0
 
 // Adapted from:
 //  https://www.marginallyclever.com/2014/03/how-to-improve-the-2-axis-cnc-gcode-interpreter-to-understand-arcs/
 void EscherParser::doArc(float posx, float posy, float x, float y, float cx, float cy, bool cw) {
+  //Serial.printf("doArc: %f, %f, %f, %f, %f, %f, %d\n", posx, posy, x, y, cx, cy, cw);
   float dx = posx - cx;
   float dy = posy - cy;
   float radius = sqrt((dx*dx)+(dy*dy));
@@ -82,11 +120,13 @@ void EscherParser::doArc(float posx, float posy, float x, float y, float cx, flo
     float ny = cy + sin(angle3) * radius;
 
     // make a line to that intermediate position
-    escher_.push(nx, ny);
+    //Serial.printf("doArc: pushing %f %f\n", nx, ny);
+    moveTo(nx, ny);
   }
 
   // one last line hit the end
-  escher_.push(x, y);
+  //Serial.printf("doArc: last pushing %f %f\n", x, y);
+  moveTo(x, y);
 }
 
 // Read a line from the command file. Returns false if EOF is hit.
@@ -98,6 +138,7 @@ bool EscherParser::readCommand() {
     int c = file_.read();
     if (c == -1) {
       // Hit EOF.
+      Serial.println("EscherParser::readCommand() hit eof");
       return false;
     }
     if (index <= MAX_COMMAND_LINE_LENGTH-1) {
@@ -142,7 +183,7 @@ bool EscherParser::processCommand() {
     }
     float x = atof(xs+1);
     float y = atof(ys+1);
-    escher_.push(x, y);
+    moveTo(x, y);
     last_x_ = x;
     last_y_ = y;
     return true;

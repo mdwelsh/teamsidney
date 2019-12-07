@@ -11,17 +11,22 @@ class EscherStepper {
   public:
   EscherStepper(MultiStepper& mstepper, long etch_width, long etch_height, long backlash_x, long backlash_y);
 
-  // Push a new raw point.
+  // Prepare for accepting data by computing scale factors based on the
+  // current parameters.
+  void computeScaleFactors();
+  // Push a new point in gCode units.
   void push(float x, float y);
-  // Remove the last raw point.
+  // Remove the last point.
   void pop();
-  // Commit the raw points to the stepper.
-  void commit();
   // Run the stepper, returning true if any steppers are still running.
   bool run();
   // Reset the state of the stepper.
   void reset();
   // Set parameters.
+  void setMinX(float minx) { minx_ = minx; }
+  void setMaxX(float maxx) { maxx_ = maxx; }
+  void setMinY(float miny) { miny_ = miny; }
+  void setMaxY(float maxy) { maxy_ = maxy; }
   void setEtchWidth(long etch_width) { etch_width_ = etch_width; }
   void setEtchHeight(long etch_height) { etch_height_ = etch_height; }
   void setBacklashX(long backlash_x) { backlash_x_ = backlash_x; }
@@ -37,9 +42,6 @@ class EscherStepper {
 
   MultiStepper& mstepper_;
 
-  // Raw, unprocessed points from the parser.
-  std::vector<std::pair<float, float>> raw_;
-
   // Pending points in stepper units.
   std::vector<std::pair<long, long>> pending_;
 
@@ -50,9 +52,8 @@ class EscherStepper {
        cur_backlash_x_, cur_backlash_y_,
        last_x_, last_y_,
        dir_x_, dir_y_,
-       last_push_x_, last_push_y_,
        offset_x_, offset_y_;
-  float scale_;
+  float minx_, miny_, maxx_, maxy_, scale_, last_push_x_, last_push_y_;
 
   // User-supplied parameters.
   int offsetLeft_;
