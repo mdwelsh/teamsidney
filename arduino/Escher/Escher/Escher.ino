@@ -2,9 +2,6 @@
 // Matt Welsh <mdw@mdw.la>
 // https://www.teamsidney.com
 
-#define DEBUG_ESP_HTTP_SERVER
-//#define DEBUG_LEDS
-
 #include <vector>
 #include <Wire.h>
 #include <AccelStepper.h>
@@ -12,12 +9,14 @@
 #include <WiFi.h>
 #include <WiFiMulti.h>
 #include <HTTPClient.h>
-#include <WebServer.h>
 #include <ArduinoJson.h>
 #include "FS.h"
 #include "SPIFFS.h"
 #include "EscherStepper.h"
 #include "EscherParser.h"
+
+// This file defines DEVICE_SECRET, WIFI_NETWORK, and WIFI_PASSWORD.
+#include "EscherDeviceConfig.h"
 
 // Define this to reverse the axes (e.g., if using gears to mate between
 // the steppers and the Etch-a-Sketch).
@@ -31,11 +30,11 @@
 #endif
 
 // These should be calibrated for each device.
-//#define BACKLASH_X 10
-//#define BACKLASH_Y 15
-#define BACKLASH_X 3
-#define BACKLASH_Y 3
-#define MAX_SPEED 100.0
+#define ETCH_WIDTH 700
+#define ETCH_HEIGHT 500
+#define BACKLASH_X 10
+#define BACKLASH_Y 15
+#define MAX_SPEED 50.0
 
 Adafruit_MotorShield AFMS = Adafruit_MotorShield();
 Adafruit_StepperMotor *myStepper1 = AFMS.getStepper(200, 1);
@@ -56,7 +55,7 @@ void backwardstep2() {
 AccelStepper stepper1(forwardstep1, backwardstep1);
 AccelStepper stepper2(forwardstep2, backwardstep2);
 MultiStepper mstepper;
-EscherStepper escher(mstepper, BACKLASH_X, BACKLASH_Y);
+EscherStepper escher(mstepper, ETCH_WIDTH, ETCH_HEIGHT, BACKLASH_X, BACKLASH_Y);
 EscherParser parser(escher);
 
 // We use some magic strings in this constant to ensure that we can easily strip it out of the binary.
@@ -64,9 +63,9 @@ const char BUILD_VERSION[] = ("__E5ch3r__ " __DATE__ " " __TIME__ " ___");
 
 WiFiMulti wifiMulti;
 HTTPClient http;
-WebServer server(80);
 File fsUploadFile;
 
+// Flash the LED.
 void flashLed(int count) {
   for (int i = 0; i < count; i++) {
     digitalWrite(LED_BUILTIN, HIGH);
@@ -76,9 +75,20 @@ void flashLed(int count) {
   }
 }
 
-enum EtchState { STATE_INITIALIZING = 0, STATE_IDLE, STATE_READY, STATE_ETCHING, STATE_PAUSED };
+enum EtchState { STATE_INITIALIZING = 0, STATE_IDLE, STATE_ETCHING };
 EtchState etchState = STATE_INITIALIZING;
+String curGcodeUrl = String("");
 
+String etchStateString() {
+  switch (etchState) {
+    case STATE_INITIALIZING: return "initializing";
+    case STATE_IDLE: return "idle";
+    case STATE_ETCHING: return "etching";
+    default: return "unknown";
+  }
+}
+
+// Initialization code.
 void setup() {  
   Serial.begin(115200);
   Serial.printf("Starting: %s\n", BUILD_VERSION);
@@ -100,18 +110,7 @@ void setup() {
   AFMS.begin(); // Start the bottom shield
 
   // Bring up WiFi.
-  wifiMulti.addAP("theonet_EXT", "juneaudog");
-
-  // Configure HTTP server.
-  server.on("/", handleRoot);
-  server.on("/upload", HTTP_OPTIONS, handleOptions);
-  server.on("/upload", HTTP_POST, handleUploadDone, handleUpload);
-  server.on("/etch", handleEtch);
-  server.on("/pause", handlePause);
-  server.on("/stop", handleStop);
-  server.on("/resume", handleResume);
-  server.on("/ping", handlePing);
-  server.onNotFound(handleNotFound);
+  wifiMulti.addAP(WIFI_NETWORK, WIFI_PASSWORD);
 
   Serial.println("Done with setup()");
 }
@@ -123,7 +122,6 @@ void checkin() {
   Serial.print("IP address is ");
   Serial.println(WiFi.localIP().toString());
 
-  //String url = "https://firestore.googleapis.com/v1/projects/team-sidney/databases/(default)/documents/escher/root/devices/" + WiFi.macAddress();
   String url = "https://firestore.googleapis.com/v1beta1/projects/team-sidney/databases/(default)/documents:commit";
   http.setTimeout(1000);
   http.addHeader("Content-Type", "application/json");
@@ -140,11 +138,17 @@ void checkin() {
   // First entry - the update operation.
   JsonObject first = writes.createNestedObject();
   JsonObject update = first.createNestedObject("update");
-  String docName = "projects/team-sidney/databases/(default)/documents/escher/root/devices/" + WiFi.macAddress();
+
+  String docName = "projects/team-sidney/databases/(default)/documents/escher/root/secret/"
+                   + DEVICE_SECRET + "/devices/" + WiFi.macAddress();
   update["name"] = docName;
+
+  // Here's the contents of the document we're writing.
   JsonObject fields = update.createNestedObject("fields");
   JsonObject buildversion = fields.createNestedObject("version");
   buildversion["stringValue"] = BUILD_VERSION;
+  JsonObject status = fields.createNestedObject("status");
+  status["stringValue"] = etchStateString();
   JsonObject mac = fields.createNestedObject("mac");
   mac["stringValue"] = WiFi.macAddress();
   JsonObject ip = fields.createNestedObject("ip");
@@ -172,20 +176,223 @@ void checkin() {
   String payload;
   serializeJson(root, payload);
 
-  Serial.print("[HTTP] POST " + url + "\n");
+  Serial.print("[checkin] POST " + url + "\n");
   Serial.print(payload + "\n");
 
   int httpCode = http.sendRequest("POST", payload);
   if (httpCode == 200) {
-    Serial.printf("[HTTP] Checkin response code: %d\n", httpCode);
+    Serial.printf("[checkin] response code: %d\n", httpCode);
   } else {
-    Serial.printf("[HTTP] failed, status code %d: %s\n",
+    Serial.printf("[checkin] failed, status code %d: %s\n",
       httpCode, http.errorToString(httpCode).c_str());
   }
   http.end();
 }
 
+// Download the given file from Firebase Storage and save it to the local filesystem.
+bool downloadGcode(const char* url) {
+  http.setTimeout(10000);
+  http.begin(url);
+  Serial.printf("[downloadGcode] GET %s\n", url);
+  int httpCode = http.GET();
+  Serial.printf("[downloadGcode] got response code: %d\n", httpCode);
+  if (httpCode <= 0) {
+    Serial.printf("[downloadGcode] failed, error: %s\n", http.errorToString(httpCode).c_str());
+    return false;
+  }
+  File outFile = SPIFFS.open("/data.gcd", FILE_WRITE);
+  int bytesRead = http.writeToStream(&outFile);
+  http.end();
+  outFile.close();
+  if (bytesRead < 0) {
+    Serial.printf("[downloadGcode] Error writing to /data.gcd: %d\n", bytesRead);
+    showFilesystemContents();
+    return false;
+  } else {
+    Serial.printf("[downloadGcode] Wrote %d bytes to /data.gcd\n", bytesRead);
+    showFilesystemContents();
+    return true;
+  }
+}
+
+// Start etching the currently downloaded file.
+bool startEtching() {
+  Serial.println("startEtching called");
+  if (parser.Open("/data.gcd")) {
+    parser.Prepare();
+    stepper1.setCurrentPosition(0);
+    stepper2.setCurrentPosition(0);
+    stepper1.enableOutputs();
+    stepper2.enableOutputs();
+    Serial.println("startEtching - starting");
+    etchState = STATE_ETCHING;
+    checkin();
+    return true;
+  } else {
+    Serial.println("startEtching - cannot open /data.gcd");
+    checkin();
+    return false;
+  }
+}
+
+void stopEtching() {
+  Serial.println("stopEtching - stopping");
+  myStepper1->release();
+  myStepper2->release();
+  stepper1.disableOutputs();
+  stepper2.disableOutputs();
+}
+
+// Read command from Firebase.
+bool readCommand() {
+  Serial.println("readCommand called");
+  if (etchState != STATE_IDLE && etchState != STATE_ETCHING) {
+    Serial.printf("readCommand - unexpected state %s\n", etchStateString());
+    return false;
+  }
+
+  String url = String("https://firestore.googleapis.com/v1beta1/") +
+               String("projects/team-sidney/databases/(default)/documents/escher/root/secret/") +
+               DEVICE_SECRET + String("/devices/") + WiFi.macAddress() + String("/commands/etch");
+  http.setTimeout(1000);
+  http.addHeader("Content-Type", "application/json");
+  http.begin(url);
+  Serial.print("[readCommand] GET " + url + "\n");
+  int httpCode = http.GET();
+  if (httpCode <= 0) {
+    Serial.printf("[readCommand] failed, error: %s\n", http.errorToString(httpCode).c_str());
+    return false;
+  }
+
+  String payload = http.getString();
+  Serial.printf("[readCommand] response code: %d\n", httpCode);
+  Serial.println(payload);
+  http.end();
+
+  if (httpCode != 200) {
+    Serial.println("[readCommand] got non-200 response code");
+    return false;
+  }
+
+  // Now, delete the etch document from Firestore, since even if there's an
+  // error from this point forward, we don't want to process it again.
+  http.setTimeout(10000);
+  http.addHeader("Content-Type", "application/json");
+  http.begin(url);
+  Serial.print("[readCommand] DELETE " + url + "\n");
+  httpCode = http.sendRequest("DELETE");
+  if (httpCode <= 0) {
+    Serial.printf("[readCommand] delete failed, error: %s\n", http.errorToString(httpCode).c_str());
+    return false;
+  }
+  String deletePayload = http.getString();
+  Serial.printf("[readCommand] delete response code: %d\n", httpCode);
+  Serial.println(deletePayload);
+  http.end();
+
+  // Parse JSON object.
+  StaticJsonDocument<1024> commandDoc;
+  DeserializationError err = deserializeJson(commandDoc, payload);
+  if (err) {
+    Serial.println("readCommand - deserialize error:");
+    Serial.println(err.c_str());
+    return false;
+  }
+
+  JsonObject command = commandDoc["fields"].as<JsonObject>();
+  if (!command.containsKey("command")) {
+    Serial.println("readCommand - command doc missing required key command");
+    return false;
+  }
+  String commandStr = command["command"]["stringValue"];
+  Serial.printf("readCommand - commandStr is %s\n", commandStr);
+
+  if (commandStr.equals("etch")) {
+    if (!command.containsKey("url")) {
+      Serial.println("readCommand - etch command missing required key url");
+      return false;
+    }
+    String gcodeUrl = command["url"]["stringValue"];
+    if (gcodeUrl.isEmpty()) {
+      // Empty URL means to stop etching.
+      if (etchState != STATE_ETCHING) {
+        Serial.printf("readCommand - got stop command in state %s\n", etchStateString());
+        return false;
+      }
+      stopEtching();
+      return true;
+    }
+
+    long offsetLeft = 0;
+    long offsetBottom = 0;
+    float zoom = 1.0;
+    bool scaleToFit = false;
+    long etchWidth = ETCH_WIDTH;
+    long etchHeight = ETCH_HEIGHT;
+    long backlashX = BACKLASH_X;
+    long backlashY = BACKLASH_Y;
+    if (command.containsKey("offsetLeft")) {
+      offsetLeft = command["offsetLeft"]["integerValue"];
+    }
+    if (command.containsKey("offsetBottom")) {
+      offsetBottom = command["offsetBottom"]["integerValue"];
+    }
+    if (command.containsKey("zoom")) {
+      if (command["zoom"].containsKey("doubleValue")) {
+        zoom = command["zoom"]["doubleValue"];
+      } else {
+        zoom = (float)command["zoom"]["integerValue"];
+      }
+    }
+    if (command.containsKey("scaleToFit")) {
+      scaleToFit = command["scaleToFit"]["booleanValue"];
+    }
+    if (command.containsKey("etchWidth")) {
+      etchWidth = command["etchWidth"]["integerValue"];
+    }
+    if (command.containsKey("etchHeight")) {
+      etchHeight = command["etchHeight"]["integerValue"];
+    }
+    if (command.containsKey("backlashX")) {
+      backlashX = command["backlashX"]["integerValue"];
+    }
+    if (command.containsKey("backlashY")) {
+      backlashY = command["backlashY"]["integerValue"];
+    }
+    escher.reset();
+    escher.setOffsetLeft(offsetLeft);
+    escher.setOffsetBottom(offsetBottom);
+    escher.setZoom(zoom);
+    escher.setScaleToFit(scaleToFit);
+    escher.setEtchWidth(etchWidth);
+    escher.setEtchHeight(etchHeight);
+    escher.setBacklashX(backlashX);
+    escher.setBacklashY(backlashY);
+
+    if (!curGcodeUrl.equals(gcodeUrl)) {
+      // New URL to download, go grab it.
+      if (!downloadGcode(gcodeUrl.c_str())) {
+        Serial.printf("readCommand - got error downloading gCode %s\n", gcodeUrl);
+        return false;
+      }
+      showFilesystemContents();
+      curGcodeUrl = gcodeUrl;
+      return startEtching();
+    } else {
+      Serial.println("readCommand - etch with same URL, ignoring");
+      return true;
+    }
+  } else {
+    Serial.printf("readCommand - Bad command %s\n", commandStr);
+    return false;
+  }
+  Serial.println("readCommand - Should never get here");
+  return false;
+}
+
+// Dump debug information on the filesystem contents.
 void showFilesystemContents() {
+  Serial.printf("SPIFFS: %d/%d bytes used\n", SPIFFS.usedBytes(), SPIFFS.totalBytes());
   File root = SPIFFS.open("/");
   File file = root.openNextFile();
   while (file) {
@@ -196,188 +403,7 @@ void showFilesystemContents() {
   }
 }
 
-// HTTP request handlers.
-
-void handleRoot() {
-  Serial.println("Server: handleRoot called");
-  server.send(200, "text/html", "<html><body>You're talking to Escher!</body></html>");
-}
-
-void handleNotFound() {
-  Serial.println("Server: handleNotFound called for " + server.uri());
-  Serial.printf("Method: ");
-  switch (server.method()) {
-    case HTTP_GET: Serial.println("GET"); break;
-    case HTTP_POST: Serial.println("POST"); break;
-    default: Serial.println("other"); break;
-  }
-  Serial.printf("Number of args: %d\n", server.args());
-  for (uint8_t i = 0; i < server.args(); i++) {
-    Serial.printf("  arg[%d] = %s\n", i, server.argName(i).c_str());
-    Serial.println(server.arg(i).c_str());
-  }
-  server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
-  server.send(404, "text/plain", "Not found");
-}
-
-void handleUpload() {
-  Serial.println("handleUpload called");
-  if (etchState == STATE_ETCHING) {
-    Serial.println("Warning - cannot accept upload while etching.");
-    return;
-  }
-
-  HTTPUpload& upload = server.upload();
-  
-  if (upload.status == UPLOAD_FILE_START) {
-    String filename = upload.filename;
-    if (!filename.startsWith("/")) {
-      filename = "/" + filename;
-    }
-    Serial.printf("handleUpload filename: %s\n", filename.c_str());
-    fsUploadFile = SPIFFS.open(filename, "w");
-    filename = String();
-    
-  } else if (upload.status == UPLOAD_FILE_WRITE) {
-    Serial.printf("handleUpload received %d bytes\n", upload.currentSize);
-    if (fsUploadFile) {
-      fsUploadFile.write(upload.buf, upload.currentSize);
-    }
-  } else if (upload.status == UPLOAD_FILE_END) {
-    if (fsUploadFile) {
-      fsUploadFile.close();
-    }
-    Serial.printf("handleUpload completed write of %d bytes\n", upload.totalSize);
-  }
-}
-
-void handleUploadDone() {
-  Serial.println("handleUploadDone called");
-  showFilesystemContents();
-  server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
-
-  if (etchState == STATE_ETCHING) {
-    server.send(500, "text/plain", "Upload rejected - already etching");
-  } else {
-    etchState = STATE_READY;
-    server.send(200, "text/plain", "Thanks for the file.");
-  }
-}
-
-void handleOptions() {
-  Serial.println("handleOptions called");
-  server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
-  server.send(200, "text/plain", "OK");
-}
-
-void handleEtch() {
-  Serial.println("handleEtch called");
-  server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
-
-  // First check that we are ready.
-  if (!(etchState == STATE_READY)) {
-    server.send(500, "text/plain", "State must be ready to start etching");
-  }
-
-  if (parser.Open("/cmddata.txt")) {
-    server.send(200, "text/plain", "Etching started.");
-    stepper1.setCurrentPosition(0);
-    stepper2.setCurrentPosition(0);
-    stepper1.enableOutputs();
-    stepper2.enableOutputs();
-    etchState = STATE_ETCHING;
-  } else {
-    server.send(500, "text/plain", "No cmddata.txt found -- use /upload first");
-    etchState = STATE_IDLE;
-  }
-}
-
-void handleStop() {
-  Serial.println("handleStop called");
-  server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
-
-  // First check that we are etching.
-  if (etchState != STATE_ETCHING && etchState != STATE_PAUSED) {
-    server.send(500, "text/plain", "State must be etching or paused to stop");
-  } else {
-    server.send(200, "text/plain", "Stopping");
-    myStepper1->release();
-    myStepper2->release();
-    stepper1.disableOutputs();
-    stepper2.disableOutputs();
-    etchState = STATE_IDLE;
-  }
-}
-
-void handlePause() {
-  Serial.println("handlePause called");
-  server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
-
-  // First check that we are etching.
-  if (etchState != STATE_ETCHING) {
-    server.send(500, "text/plain", "State must be etching to pause");
-  } else {
-    server.send(200, "text/plain", "Pausing");
-    myStepper1->release();
-    myStepper2->release();
-    stepper1.disableOutputs();
-    stepper2.disableOutputs();
-    etchState = STATE_PAUSED;
-  }
-}
-
-void handleResume() {
-  Serial.println("handleResume called");
-  server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
-
-  if (etchState != STATE_PAUSED) {
-    server.send(500, "text/plain", "State must be paused to resume etching");
-  } else {
-    server.send(200, "text/plain", "Resuming");
-    stepper1.enableOutputs();
-    stepper2.enableOutputs();
-    etchState = STATE_ETCHING;
-  } 
-}
-
-void handlePing() {
-  Serial.println("handlePing called");
-  server.sendHeader("Access-Control-Allow-Origin", "*"); // Permit CORS.
-
-  StaticJsonDocument<1024> pingResponseDoc;
-  JsonObject root = pingResponseDoc.to<JsonObject>();
-
-  root["mac"] = WiFi.macAddress();
-  root["ip"] = WiFi.localIP().toString();
-  root["rssi"] = WiFi.RSSI();
-  root["backlash_x"] = String(BACKLASH_X);
-  root["backlash_y"] = String(BACKLASH_Y);
-
-  switch (etchState) {
-    case STATE_INITIALIZING:
-      root["state"] = "initializing";
-      break;
-    case STATE_IDLE:
-      root["state"] = "idle";
-      break;
-    case STATE_READY:
-      root["state"] = "ready";
-      break;
-    case STATE_PAUSED:
-      root["state"] = "paused";
-      break;
-    case STATE_ETCHING:
-      root["state"] = "etching";
-      break;
-    default:
-      root["state"] = "unknown";
-      break;
-  }
-  String payload;
-  serializeJson(root, payload);
-  server.send(200, "application/json", payload);
-}
-
+// Run the Etcher.
 bool runEtcher() {
   // First see if the Escher controller is ready for more.
   if (escher.run()) {
@@ -388,47 +414,37 @@ bool runEtcher() {
   return parser.Feed();
 }
 
-// Main loop.
 unsigned long lastCheckin = 0;
 unsigned long lastBlink = 0;
+String gcodeUrl = "";
+String gcodeHash = "";
 
+// Main loop.
 void loop() {
-#ifdef DEFINE_LEDS
-  if (millis() - lastBlink >= 8000) {
-    lastBlink = millis();
-    flashLed(3 + etchState);
-  }
-#endif
-
   if (etchState == STATE_INITIALIZING) {
     if (wifiMulti.run() != WL_CONNECTED) {
       Serial.println("Waiting for WiFi connection...");
       delay(1000);
       return;
     } else {
-      server.begin();
-      Serial.println("Started HTTP server on http://" + WiFi.localIP().toString() + ":80/");
+      Serial.println("WiFi initialized, setting state to idle.");
       etchState = STATE_IDLE;
     }
     
-  } else if (etchState == STATE_IDLE || etchState == STATE_READY || etchState == STATE_PAUSED) {
-    // Do periodic checkins.
+  } else if (etchState == STATE_IDLE) {
     if (millis() - lastCheckin >= 10000) {
       lastCheckin = millis();
       checkin();
+      if (!readCommand()) {
+        etchState = STATE_IDLE;
+      }
     }
-    server.handleClient();   
-     
   } else if (etchState == STATE_ETCHING) {
-    // Avoid doing checkins; run etcher but poll for HTTP pause commands.
     if (!runEtcher()) {
       Serial.println("Etcher completed.");
-      myStepper1->release();
-      myStepper2->release();
-      stepper1.disableOutputs();
-      stepper2.disableOutputs();
+      stopEtching();
       etchState = STATE_IDLE;
+      checkin();
     }
-    server.handleClient();
   }
 }
