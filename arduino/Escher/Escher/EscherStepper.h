@@ -31,8 +31,8 @@ class EscherStepper {
   void setEtchHeight(long etch_height) { etch_height_ = etch_height; }
   void setBacklashX(long backlash_x) { backlash_x_ = backlash_x; }
   void setBacklashY(long backlash_y) { backlash_y_ = backlash_y; }
-  void setOffsetLeft(int offsetLeft) { offsetLeft_ = offsetLeft; }
-  void setOffsetBottom(int offsetBottom) { offsetBottom_ = offsetBottom; }
+  void setOffsetLeft(long offsetLeft) { offsetLeft_ = offsetLeft; }
+  void setOffsetBottom(long offsetBottom) { offsetBottom_ = offsetBottom; }
   void setZoom(float zoom) { zoom_ = zoom; }
   void setScaleToFit(bool scaleToFit) { scaleToFit_ = scaleToFit; }
 
@@ -52,12 +52,13 @@ class EscherStepper {
        cur_backlash_x_, cur_backlash_y_,
        last_x_, last_y_,
        dir_x_, dir_y_,
-       offset_x_, offset_y_;
-  float minx_, miny_, maxx_, maxy_, scale_, last_push_x_, last_push_y_;
+       offset_x_, offset_y_,
+       last_push_x_, last_push_y_;
+  float minx_, miny_, maxx_, maxy_, scale_;
 
   // User-supplied parameters.
-  int offsetLeft_;
-  int offsetBottom_;
+  long offsetLeft_;
+  long offsetBottom_;
   float zoom_;
   bool scaleToFit_;
 

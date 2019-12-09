@@ -19,6 +19,10 @@ void EscherParser::Prepare() {
   maxx_ = 0.0;
   miny_ = FLT_MAX;
   maxy_ = 0.0;
+  last_minx_ = FLT_MAX;
+  last_maxx_ = 0.0;
+  last_miny_ = FLT_MAX;
+  last_maxy_ = 0.0;
   preparing_ = true;
   while (Feed()) {}
   preparing_ = false;
@@ -40,6 +44,12 @@ void EscherParser::moveTo(float x, float y) {
   }
   last_x_ = x;
   last_y_ = y;
+  // Save the previous value so that we can restore it after parsing
+  // the file, to undo the final point.
+  last_minx_ = minx_;
+  last_maxx_ = maxx_;
+  last_miny_ = miny_;
+  last_maxy_ = maxy_;
   if (preparing_) {
     if (x < minx_) {
       minx_ = x;
@@ -64,21 +74,29 @@ bool EscherParser::Feed() {
   if (eof_) {
     return false;
   }
-  // Read a line from the command file.
-  if (!readCommand()) {
-    Serial.println("EscherParser::Feed - reached EOF.");
-    // Remove final (0, 0) added by Inkscape Gcode plugin.
-    if (!preparing_) {
-      escher_.pop();
+
+  while(true) {
+    // Read a line from the command file.
+    if (!readCommand()) {
+      Serial.println("EscherParser::Feed - reached EOF.");
+      // Ignore final (0, 0) added by Inkscape Gcode plugin.
+      if (preparing_) {
+        minx_ = last_minx_;
+        maxx_ = last_maxx_;
+        miny_ = last_miny_;
+        maxy_ = last_maxy_;
+      } else {
+        escher_.pop();
+      }
+      eof_ = true;
+      return false;
     }
-    eof_ = true;
-    return false;
+    // The command we processed might have an error or be something we
+    // skip, so read another command if that happens.
+    if (processCommand()) {
+      return true;
+    }
   }
-  //Serial.printf("Feed: Command %s\n", curCommand_);
-  if (!processCommand()) {
-    Serial.println("EscherParser::Feed - error processing command.");
-  }
-  return true;
 }
 
 double EscherParser::atan3(double dy, double dx) {
@@ -94,7 +112,7 @@ double EscherParser::atan3(double dy, double dx) {
 
 // Adapted from:
 //  https://www.marginallyclever.com/2014/03/how-to-improve-the-2-axis-cnc-gcode-interpreter-to-understand-arcs/
-void EscherParser::doArc(float posx, float posy, float x, float y, float cx, float cy, bool cw) {
+bool EscherParser::doArc(float posx, float posy, float x, float y, float cx, float cy, bool cw) {
   //Serial.printf("doArc: %f, %f, %f, %f, %f, %f, %d\n", posx, posy, x, y, cx, cy, cw);
   float dx = posx - cx;
   float dy = posy - cy;
@@ -117,9 +135,9 @@ void EscherParser::doArc(float posx, float posy, float x, float y, float cx, flo
   float l = abs(sweep) * radius;
   int num_segments = floor(l / CM_PER_SEGMENT);
 
-  Serial.printf("doArc: posx %f posy %f x %f y %f cx %f cy %f cw %f\n", posx, posy, x, y, cx, cy, cw);
-  Serial.printf("doArc: dx %f dy %f radius %f angle1 %f angle2 %f sweep %f\n", dx, dy, radius, angle1, angle2, sweep);
-  Serial.printf("doArc: l %f num_segments %d\n", l, num_segments);
+  //Serial.printf("doArc: posx %f posy %f x %f y %f cx %f cy %f cw %f\n", posx, posy, x, y, cx, cy, cw);
+  //Serial.printf("doArc: dx %f dy %f radius %f angle1 %f angle2 %f sweep %f\n", dx, dy, radius, angle1, angle2, sweep);
+  //Serial.printf("doArc: l %f num_segments %d\n", l, num_segments);
 
   for (int i = 0; i < num_segments; i++) {
     // interpolate around the arc
@@ -138,6 +156,10 @@ void EscherParser::doArc(float posx, float posy, float x, float y, float cx, flo
   // one last line hit the end
   //Serial.printf("doArc: last pushing %f %f\n", x, y);
   moveTo(x, y);
+  // We return false on a (0.0, 0.0) move, since that might be the
+  // last point in the gCode file, which we want to read past and
+  // get rid of before returning from Feed().
+  return !(x == 0.0 && y == 0.0);
 }
 
 // Read a line from the command file. Returns false if EOF is hit.
@@ -164,8 +186,7 @@ bool EscherParser::readCommand() {
         return true;
       } else {
         // Command ran into the limit, so we skip this line.
-        Serial.printf("WARNING - Skipping long command line (%d bytes)\n",
-            index);
+        Serial.printf("WARNING - Skipping long command line (%d bytes)\n", index);
         index = 0;
       }
     }
@@ -173,10 +194,11 @@ bool EscherParser::readCommand() {
 }
 
 // Process the current command. Returns false if there is an error
-// parsing or processing the command.
+// parsing or processing the command. Returns true if the command pushed
+// new points into the EscherStepper to be processed.
 bool EscherParser::processCommand() {
   String cmd = String(curCommand_);
-  Serial.printf("Processing: %s\n", cmd.c_str());
+  //Serial.printf("Processing: %s\n", cmd.c_str());
 
   // Line command.
   if (cmd.startsWith("G00") || cmd.startsWith("G01")) {
@@ -196,7 +218,10 @@ bool EscherParser::processCommand() {
     float x = atof(xs+1);
     float y = atof(ys+1);
     moveTo(x, y);
-    return true;
+    // We return false on a (0.0, 0.0) move, since that might be the
+    // last point in the gCode file, which we want to read past and
+    // get rid of before returning from Feed().
+    return !(x == 0.0 && y == 0.0);
   }
 
   // Curve.
@@ -231,9 +256,8 @@ bool EscherParser::processCommand() {
     if (cmd.startsWith("G03")) {
       cw = true;
     }
-    doArc(last_x_, last_y_, x, y, last_x_+i, last_y_+j, cw);
-    return true;
+    return doArc(last_x_, last_y_, x, y, last_x_+i, last_y_+j, cw);
   }
   // Ignore all other commands.
-  return true;
+  return false;
 }

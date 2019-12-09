@@ -20,7 +20,7 @@ EscherStepper::EscherStepper(
   cur_backlash_x_(0), cur_backlash_y_(0),
   last_x_(0), last_y_(0),
   dir_x_(0), dir_y_(0),
-  last_push_x_(0.0), last_push_y_(0.0),
+  last_push_x_(0), last_push_y_(0),
   offsetLeft_(0), offsetBottom_(0), zoom_(1.0), scaleToFit_(false) {}
 
 void EscherStepper::reset() {
@@ -32,8 +32,8 @@ void EscherStepper::reset() {
   last_y_ = 0;
   dir_x_ = 0;
   dir_y_ = 0;
-  last_push_x_ = 0.0;
-  last_push_y_ = 0.0;
+  last_push_x_ = 0;
+  last_push_y_ = 0;
   offsetLeft_ = 0;
   offsetBottom_ = 0;
   zoom_ = 1.0;
@@ -73,25 +73,25 @@ void EscherStepper::moveTo(long x, long y) {
   if (diry != 0) {
     dir_y_ = diry;
   }
-
-  Serial.printf("EscherStepper: moving to %d %d\n", target[0], target[1]);
   mstepper_.moveTo(target);
 }
 
 void EscherStepper::push(float x, float y) {
   // Convert from gCode units to stepper units by applying scale and
   // translation factors.
-  long tx = (zoom_ * scale_ * x) + offsetLeft_ + offset_x_;
-  long ty = (zoom_ * scale_ * y) + offsetBottom_ + offset_y_;
+  float tx = (zoom_ * scale_ * x) + (offset_x_ + offsetLeft_);
+  float ty = (zoom_ * scale_ * y) + (offset_y_ + offsetBottom_);
+  long ltx = floor(tx);
+  long lty = floor(ty);
+
   // Skip duplicate points.
   if (tx == last_push_x_ && ty == last_push_y_) {
     return;
   }
-  Serial.printf("EscherStepper::push %f -> %d, %f -> %d\n", x, tx, y, ty);
-  std::pair<long, long> coord(tx, ty);
+  std::pair<long, long> coord(ltx, lty);
   pending_.push_back(coord);
-  last_push_x_ = tx;
-  last_push_y_ = ty;
+  last_push_x_ = ltx;
+  last_push_y_ = lty;
 }
 
 void EscherStepper::pop() {
@@ -108,7 +108,6 @@ bool EscherStepper::run() {
     //Serial.println("EscherStepper: Steppers still running");
   }
   if (stopped_) {
-    Serial.println("EscherStepper::run() is stopped");
     if (!pending_.empty()) {
       stopped_ = false;
       std::pair<long, long> front = pending_.front();
@@ -116,7 +115,6 @@ bool EscherStepper::run() {
       moveTo(front.first, front.second);
     }
   }
-  //Serial.printf("EscherStepper.run() returning %s\n", (!_stopped)?"true":"false");
   return !stopped_;
 }
 
@@ -129,24 +127,29 @@ void EscherStepper::computeScaleFactors() {
     // Calculate scaling factor and offsets.
     float aspect_ratio = (etch_width_ * 1.0) / (etch_height_ * 1.0);
     Serial.printf("scaleToFit: width %d height %d ratio %f\n", etch_width_, etch_height_, aspect_ratio);
+    Serial.printf("scaleToFit: minx_ %f maxx_ %f miny_ %f maxy_ %f\n", minx_, maxx_, miny_, maxy_);
     float dx = maxx_ - minx_;
     float dy = maxy_ - miny_;
     Serial.printf("scaleToFit: dx %f dy %f\n", dx, dy);
+    Serial.printf("scaleToFit: dx/ar %f dy %f\n", (dx/aspect_ratio), dy);
     if ((dx / aspect_ratio) > dy) {
       // The object is wider than it is tall.
+      Serial.printf("scaleToFit: wider case\n");
       scale_ = etch_width_ / dx;
       offset_x_ = 0;
-      offset_y_ = (etch_height_ - (scale_ * dy)) / 2;
+      offset_y_ = floor((etch_height_ - (scale_ * dy)) / 2.0);
     } else {
       // The object is taller than it is wide.
+      Serial.printf("scaleToFit: taller case\n");
       scale_ = etch_height_ / dy;
-      offset_x_ = (etch_width_ - (scale_ * dx)) / 2;
+      offset_x_ = floor((etch_width_ - (scale_ * dx)) / 2.0);
       offset_y_ = 0;
     }
+    Serial.printf("computeScaleFactors: scale_ %f offset_x %d offset_y %d\n", scale_, offset_x_, offset_y_);
     // This ensures that the offsets are with respect to the gCode object
     // having its origin point at the lower left corner.
-    offset_x_ -= minx_;
-    offset_y_ -= miny_;
+    offset_x_ -= (minx_ * scale_ * zoom_);
+    offset_y_ -= (miny_ * scale_ * zoom_);
   }
-  Serial.printf("computeScaleFactors: setting scale_ %f offset_x %d offset_y %d\n", scale_, offset_x_, offset_y_);
+  Serial.printf("computeScaleFactors: final scale_ %f offset_x %d offset_y %d\n", scale_, offset_x_, offset_y_);
 }

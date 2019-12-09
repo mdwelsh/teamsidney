@@ -30,11 +30,11 @@
 #endif
 
 // These should be calibrated for each device.
-#define ETCH_WIDTH 600
-#define ETCH_HEIGHT 400
+#define ETCH_WIDTH 700
+#define ETCH_HEIGHT 500
 #define BACKLASH_X 10
 #define BACKLASH_Y 15
-#define MAX_SPEED 100.0
+#define MAX_SPEED 50.0
 
 Adafruit_MotorShield AFMS = Adafruit_MotorShield();
 Adafruit_StepperMotor *myStepper1 = AFMS.getStepper(200, 1);
@@ -206,22 +206,18 @@ bool downloadGcode(const char* url) {
   outFile.close();
   if (bytesRead < 0) {
     Serial.printf("[downloadGcode] Error writing to /data.gcd: %d\n", bytesRead);
+    showFilesystemContents();
     return false;
   } else {
-    Serial.printf("[downloadGcode] Wrote %d bytes to /data.gcd:\n", bytesRead);
-    File inFile = SPIFFS.open("/data.gcd", FILE_READ);
-    String data = "";
-    int c;
-    while ((c = inFile.read()) > 0) {
-      data += (char)c;
-    }
-    Serial.println(data);
+    Serial.printf("[downloadGcode] Wrote %d bytes to /data.gcd\n", bytesRead);
+    showFilesystemContents();
     return true;
   }
 }
 
 // Start etching the currently downloaded file.
 bool startEtching() {
+  Serial.println("startEtching called");
   if (parser.Open("/data.gcd")) {
     parser.Prepare();
     stepper1.setCurrentPosition(0);
@@ -230,9 +226,11 @@ bool startEtching() {
     stepper2.enableOutputs();
     Serial.println("startEtching - starting");
     etchState = STATE_ETCHING;
+    checkin();
     return true;
   } else {
     Serial.println("startEtching - cannot open /data.gcd");
+    checkin();
     return false;
   }
 }
@@ -276,23 +274,21 @@ bool readCommand() {
     return false;
   }
 
-#if 0
   // Now, delete the etch document from Firestore, since even if there's an
   // error from this point forward, we don't want to process it again.
-  http.setTimeout(1000);
+  http.setTimeout(10000);
   http.addHeader("Content-Type", "application/json");
   http.begin(url);
   Serial.print("[readCommand] DELETE " + url + "\n");
   httpCode = http.sendRequest("DELETE");
   if (httpCode <= 0) {
-    Serial.printf("[readCommand] failed, error: %s\n", http.errorToString(httpCode).c_str());
+    Serial.printf("[readCommand] delete failed, error: %s\n", http.errorToString(httpCode).c_str());
     return false;
   }
-  payload = http.getString();
+  String deletePayload = http.getString();
   Serial.printf("[readCommand] delete response code: %d\n", httpCode);
-  Serial.println(payload);
+  Serial.println(deletePayload);
   http.end();
-#endif
 
   // Parse JSON object.
   StaticJsonDocument<1024> commandDoc;
@@ -327,8 +323,8 @@ bool readCommand() {
       return true;
     }
 
-    int offsetLeft = 0;
-    int offsetBottom = 0;
+    long offsetLeft = 0;
+    long offsetBottom = 0;
     float zoom = 1.0;
     bool scaleToFit = false;
     long etchWidth = ETCH_WIDTH;
@@ -342,7 +338,11 @@ bool readCommand() {
       offsetBottom = command["offsetBottom"]["integerValue"];
     }
     if (command.containsKey("zoom")) {
-      zoom = command["zoom"]["doubleValue"];
+      if (command["zoom"].containsKey("doubleValue")) {
+        zoom = command["zoom"]["doubleValue"];
+      } else {
+        zoom = (float)command["zoom"]["integerValue"];
+      }
     }
     if (command.containsKey("scaleToFit")) {
       scaleToFit = command["scaleToFit"]["booleanValue"];
@@ -436,16 +436,15 @@ void loop() {
       lastCheckin = millis();
       checkin();
       if (!readCommand()) {
-        Serial.println("readCommand returned error - resetting to idle state");
         etchState = STATE_IDLE;
       }
     }
   } else if (etchState == STATE_ETCHING) {
-    // Avoid doing checkins; only run etcher until done.
     if (!runEtcher()) {
       Serial.println("Etcher completed.");
       stopEtching();
       etchState = STATE_IDLE;
+      checkin();
     }
   }
 }

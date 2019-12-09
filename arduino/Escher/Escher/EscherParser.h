@@ -27,7 +27,7 @@ class EscherParser {
   private:
   bool readCommand();
   bool processCommand();
-  void doArc(float posx, float posy, float x, float y, float cx, float cy, bool cw);
+  bool doArc(float posx, float posy, float x, float y, float cx, float cy, bool cw);
   double atan3(double dy, double dx);
   void moveTo(float x, float y);
   
@@ -40,6 +40,7 @@ class EscherParser {
   float last_x_;
   float last_y_;
   float minx_, maxx_, miny_, maxy_;
+  float last_minx_, last_maxx_, last_miny_, last_maxy_;
 
 };
 
