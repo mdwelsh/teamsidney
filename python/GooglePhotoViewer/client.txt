@@ -1,5 +1,0 @@
-Client ID
-395332355872-qup939njts668h2jqmkder0bhji5qrtn.apps.googleusercontent.com
-
-Client secret
-5uiKdgkNcF7tyysWUe1R8JBw
