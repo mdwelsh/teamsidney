@@ -1,11 +1,6 @@
-/* Blinky - Team Sidney Enterprises
+/* Mercator - Team Sidney Enterprises
  * Author: Matt Welsh <mdw@mdw.la>
- * 
- * This sketch controls a Feather Huzzah32 board with an attached Neopixel or Dotstar LED strip.
- * It periodically checks in by writing a record to a Firebase database, and reads a config from
- * the database to control the LED pattern.
  */
-
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -15,49 +10,34 @@
 #include <WiFiMulti.h>
 #include <HTTPClient.h>
 
-#include "Blinky.h"
-#include "BlinkyModes.h"
+#include "Mercator.h"
+#include "MercatorModes.h"
+
+// Define for non-Wifi operation.
+#define NO_CHECKIN
 
 // We use some magic strings in this constant to ensure that we can easily strip it out of the binary.
-const char BUILD_VERSION[] = ("__Bl!nky__ " __DATE__ " " __TIME__ " " DEVICE_TYPE " " DEVICE_FORMFACTOR " ___");
+const char BUILD_VERSION[] = ("__Mercator__ " __DATE__ " " __TIME__ " " DEVICE_TYPE " " DEVICE_FORMFACTOR " ___");
 
 WiFiMulti wifiMulti;
 HTTPClient http;
 
 StaticJsonDocument<1024> curConfigDocument;
-
-deviceConfig_t curConfig = (deviceConfig_t) {
-  "test",
-  true,
-  NUMPIXELS,
-  DEFAULT_DATA_PIN,
-  DEFAULT_CLOCK_PIN,
-  0,   // Color change.
-  50, // Brightness.
-  100, // Speed.
-  0,   // Color1.
-  0,   // Color2.
-  ""   // Firmware.
-};
 deviceConfig_t nextConfig;
 
-//#define TEST_CONFIG // Define for local testing.
-#ifdef TEST_CONFIG
-// Only used for testing.
-deviceConfig_t testConfig = (deviceConfig_t) {
-  "spaceinvaders",
+deviceConfig_t curConfig = (deviceConfig_t) {
+  "mercator",
   true,
   NUMPIXELS,
   DEFAULT_DATA_PIN,
   DEFAULT_CLOCK_PIN,
   5,   // Color change.
-  50, // Brightness.
-  10, // Speed.
-  0xff0000,   // Color1.
-  0xff00ff,   // Color2.
+  70, // Brightness.
+  1, // Speed.
+  0xffffff,   // Color1.
+  0xff0000,   // Color2.
   ""   // Firmware.
 };
-#endif
 
 // We maintain the strip as a global variable mainly because it can be different types.
 #ifdef USE_NEOPIXEL
@@ -66,7 +46,7 @@ Adafruit_NeoPixel *strip;
 Adafruit_DotStar *strip;
 #endif
 
-BlinkyMode *curMode = NULL;
+MercatorMode *curMode = NULL;
 
 // Used to protect access to curConfig / nextConfig.
 SemaphoreHandle_t configMutex = NULL;
@@ -75,18 +55,6 @@ SemaphoreHandle_t configMutex = NULL;
 StaticJsonDocument<512> firmwareVersionDocument;
 String firmwareUrl = "";
 String firmwareHash = "";
-
-// Set of modes to select from in "random" mode.
-#define NUM_RANDOM_MODES 7
-const String RANDOM_MODES[] = {
-  "wipe",
-  "theatre",
-  "rainbow",
-  "bounce",
-  "strobe",
-  "rain",
-  "comet",
-};
 
 // Concurrent tasks.
 void TaskCheckin(void *);
@@ -123,18 +91,18 @@ void setup() {
   printConfig(&nextConfig);
 
   makeNewStrip(NUMPIXELS, DEFAULT_DATA_PIN, DEFAULT_CLOCK_PIN);
-  curMode = BlinkyMode::Create(&curConfig);
+  curMode = MercatorMode::Create(&curConfig);
 
-#ifndef TEST_CONFIG
+#ifndef NO_CHECKIN
   for (uint8_t t = 4; t > 0; t--) {
     Serial.printf("[SETUP] WAIT %d...\n", t);
     Serial.flush();
     delay(1000);
   }
-  wifiMulti.addAP("theonet_EXT", "juneaudog");
-#endif // TEST_CONFIG
-
+  wifiMulti.addAP("theonet", "juneaudog");
   xTaskCreate(TaskCheckin, (const char *)"Checkin", 1024*40, NULL, 2, NULL);
+#endif // NO_CHECKIN
+
   xTaskCreate(TaskRunConfig, (const char *)"Run config", 1024*40, NULL, 8, NULL);
   Serial.println("Done with setup()");
 }
@@ -408,26 +376,9 @@ void comet(uint32_t color, int tail, int wait) {
   }
 }
 
-#if 0
-void christmasRainbow(int wait) {
-  for(uint16_t i=0; i < strip->numPixels(); i++) {
-    uint32_t c;
-    if (christmasState[i].wheelPos == 0) {
-      christmasState[i].wheelPos = random(1, 255);
-    }
-    christmasState[i].wheelPos += 1;
-    christmasState[i].wheelPos %= 255;
-    c = Wheel(christmasState[i].wheelPos);
-    strip->setPixelColor(i, c);
-  }
-  strip->show();
-  delay(wait);
-}
-#endif
-
 // Run the current config.
 void runConfig() {
-  Serial.printf("runConfig mode: %s\n", curConfig.mode);
+  //Serial.printf("runConfig mode: %s\n", curConfig.mode);
 
   bool configChanged = false;
   if (xSemaphoreTake(configMutex, (TickType_t )100) == pdTRUE) {
@@ -452,113 +403,11 @@ void runConfig() {
 
   if (configChanged) {
     delete curMode;
-    curMode = BlinkyMode::Create(&curConfig);
+    curMode = MercatorMode::Create(&curConfig);
   }
 
   curMode->run();
 }
-
-#if 0 // XXX XXX XXX MDW - Need to refactor the below:
-
-  if (curConfig.colorChange > 0) {
-    wheelPos += curConfig.colorChange;
-    wheelPos = wheelPos % 255;
-    curConfig.color1 = Wheel(wheelPos);
-    if (curConfig.color2 != 0) {
-      curConfig.color2 = Wheel((wheelPos + 128) % 255);
-    }
-  }
-
-  Serial.printf("Running config: %s enabled %s\n",
-    curConfig.mode,
-    curConfig.enabled ? "true" : "false");
-
-  strip->setBrightness(curConfig.brightness);
-
-  if (!strcmp(curConfig.mode, "none") ||
-      !strcmp(curConfig.mode, "off") ||
-      !curConfig.enabled) {
-    black();
-    delay(1000);
-
-  } else if (!strcmp(curConfig.mode, "wipe")) {
-    colorWipe(curConfig.color1, curConfig.speed);
-    colorWipe(0, curConfig.speed);
-    
-  } else if (!strcmp(curConfig.mode, "theater")) {
-    theaterChase(curConfig.color1, curConfig.speed);
-    
-  } else if (!strcmp(curConfig.mode, "rainbow")) {
-    strip->setBrightness(curConfig.brightness);
-    rainbow(curConfig.speed);
-    
-  } else if (!strcmp(curConfig.mode, "rainbowCycle")) {
-    rainbowCycle(curConfig.speed);
-    
-  } else if (!strcmp(curConfig.mode, "bounce")) {
-    bounce(curConfig.color1, curConfig.speed);
-    
-  } else if (!strcmp(curConfig.mode, "strobe")) {
-    strobe(curConfig.color1, 10, curConfig.speed);
-    if (curConfig.color2 != 0) {
-      strobe(curConfig.color2, 10, curConfig.speed);
-    }
-
-  } else if (!strcmp(curConfig.mode, "rain")) {
-    rain(curConfig.color1, strip->numPixels(), curConfig.speed, 1.0, 1.0, 0.0, 0.05, 0.05, false, false);
-
-  } else if (!strcmp(curConfig.mode, "snow")) {
-    rain(curConfig.color1, strip->numPixels(), curConfig.speed, 0.02, 1.0, 0.0, 0.01, 0.2, false, false);
-
-  } else if (!strcmp(curConfig.mode, "sparkle")) {
-    rain(curConfig.color1, strip->numPixels(), curConfig.speed, 1.0, 1.0, 0.0, 0, 0.4, false, false);
-
-  } else if (!strcmp(curConfig.mode, "shimmer")) {
-    rain(curConfig.color1, 10, curConfig.speed, 0.1, 1.0, 0.0, 0.2, 0.05, true, false);
-
-  } else if (!strcmp(curConfig.mode, "twinkle")) {
-    rain(curConfig.color1, strip->numPixels(), curConfig.speed, 0.2, 0.8, 0.0, 0.1, 0.05, false, true);
-
-  } else if (!strcmp(curConfig.mode, "comet")) {
-    comet(curConfig.color1, 100, curConfig.speed);
-
-  } else if (!strcmp(curConfig.mode, "candle")) {
-    candle(curConfig.speed);
-
-  } else if (!strcmp(curConfig.mode, "flicker")) {
-    flicker(curConfig.color1, curConfig.brightness, curConfig.speed);
-
-  } else if (!strcmp(curConfig.mode, "phantom")) {
-    phantom(curConfig.color1, 5, 10, curConfig.speed);
-
-/*
-  } else if (!strcmp(curConfig.mode), "christmas")) {
-    christmas(curConfig.speed, false, true);
-
-  } else if (!strcmp(curConfig.mode), "christmasBoring")) {
-    christmas(curConfig.speed, false, false);
-
-  } else if (!strcmp(curConfig.mode), "christmasRandom")) {
-    christmas(curConfig.speed, true, true);
-
-  } else if (!strcmp(curConfig.mode), "christmasRainbow")) {
-    christmasRainbow(curConfig.speed);
-*/
-
-  } else if (!strcmp(curConfig.mode, "test")) {
-    strip->setBrightness(50);
-    colorWipe(0xff0000, 5);
-    colorWipe(0x00ff00, 5);
-    colorWipe(0x0000ff, 5);
-    colorWipe(0, 5);
-    
-  } else {
-    Serial.printf("Unknown mode: %s\n", curConfig.mode);
-    black();
-    delay(1000);
-  }
-}
-#endif // 0
 
 void checkin() {
   Serial.print("MAC address ");
@@ -613,6 +462,8 @@ void checkin() {
 
 void readConfig() {
   Serial.println("readConfig called");
+  // XXX XXX MDW - Add this back in for Mercator.
+  return;
 
 #ifdef TEST_CONFIG
   memcpy(&nextConfig, &testConfig, sizeof(nextConfig));

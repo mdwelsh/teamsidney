@@ -1,5 +1,5 @@
-#include "Blinky.h"
-#include "BlinkyModes.h"
+#include "Mercator.h"
+#include "MercatorModes.h"
 
 #define NUM_CHRISTMAS_COLORS 10
 const uint32_t CHRISTMAS_COLORS[] = {
@@ -16,9 +16,12 @@ const uint32_t CHRISTMAS_COLORS[] = {
 };
 
 #define NUM_SPACEINVADERS_MODES 6
-BlinkyMode* SPACEINVADERS_MODES[] = {};
+MercatorMode* SPACEINVADERS_MODES[] = {};
 
-BlinkyMode* BlinkyMode::Create(const deviceConfig_t *config) {
+#define NUM_MERCATOR_MODES 2
+MercatorMode* MERCATOR_MODES[] = {};
+
+MercatorMode* MercatorMode::Create(const deviceConfig_t *config) {
   if (!strcmp(config->mode, "") || !strcmp(config->mode, "off") || !strcmp(config->mode, "none")) {
     Serial.println("Creating NoneMode");
     return new NoneMode();
@@ -96,6 +99,15 @@ BlinkyMode* BlinkyMode::Create(const deviceConfig_t *config) {
     PixelMapper *m = new MultiColorMapper(config, CHRISTMAS_COLORS, NUM_CHRISTMAS_COLORS);
     return new Rain(config, m, strip->numPixels(), 0.7, 0.8, 0.6, 0.1, 0.1, 0.1, false, true);
   }
+  if (!strcmp(config->mode, "pulse")) {
+    return new Pulse(config->color1, config->color2, 20);
+  }
+  if (!strcmp(config->mode, "comet")) {
+    return new Comet(config->color1, 60, 10);
+  }
+  if (!strcmp(config->mode, "mercator")) {
+    return new LongitudinalMode(config);
+  }
   if (!strcmp(config->mode, "spaceinvaders")) {
 
     /* Pulse */
@@ -143,6 +155,14 @@ void ColorChangingMode::run() {
       _color2 = Wheel(_wheel2);
     }
   }
+}
+
+void LongitudinalMode::run() {
+  strip->setBrightness(_brightness);
+  colorWipe(_color1, 0);
+  delay(_speed);
+  colorWipe(_color2, 0);
+  delay(_speed);
 }
 
 void WipeMode::run() {
@@ -259,6 +279,7 @@ uint32_t Rain::PixelColor(int index) {
 }
 
 void RotatingMode::run() {
+  Serial.println("RotatingMode::run called");
   if (lastSwitch_ == 0) {
     lastSwitch_ = millis();
   }

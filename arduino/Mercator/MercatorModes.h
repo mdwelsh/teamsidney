@@ -1,30 +1,27 @@
 /* Blinky - Team Sidney Enterprises
  * Author: Matt Welsh <mdw@mdw.la>
  * 
- * This sketch controls a Feather Huzzah32 board with an attached Neopixel or Dotstar LED strip.
- * It periodically checks in by writing a record to a Firebase database, and reads a config from
- * the database to control the LED pattern.
  */
 
-#ifndef _BlinkyModes_h
-#define _BlinkyModes_h
+#ifndef _MercatorModes_h
+#define _MercatorModes_h
 
-#include "Blinky.h"
+#include "Mercator.h"
 
-class BlinkyMode {
+class MercatorMode {
 public:
   // Run the mode.
   virtual void run() = 0;
-  // Create the appropriate BlinkyMode object for the given config.
-  static BlinkyMode* Create(const deviceConfig_t*);
+  // Create the appropriate MercatorMode object for the given config.
+  static MercatorMode* Create(const deviceConfig_t*);
 };
 
-class NoneMode : public BlinkyMode {
+class NoneMode : public MercatorMode {
 public:
   void run() { /* Do nothing. */ }
 };
 
-class ColorChangingMode : public BlinkyMode {
+class ColorChangingMode : public MercatorMode {
 public:
   ColorChangingMode(const deviceConfig_t *config)
     : _brightness(config->brightness),
@@ -47,18 +44,18 @@ private:
   int _speed;
 };
 
-class TestMode : public BlinkyMode {
+class TestMode : public MercatorMode {
 public:
   void run();
 };
 
-class RotatingMode : public BlinkyMode {
+class RotatingMode : public MercatorMode {
   public:
-  RotatingMode(BlinkyMode** modes, int numModes, int rotateTime) 
+  RotatingMode(MercatorMode** modes, int numModes, int rotateTime) 
     : modes_(modes), numModes_(numModes), rotateTime_(rotateTime), lastSwitch_(0), curIndex_(0) {}
   void run();
   private:
-    BlinkyMode** modes_;
+    MercatorMode** modes_;
     int numModes_;
     int rotateTime_;
     int curIndex_;
@@ -156,7 +153,7 @@ private:
 };
 
 
-class Comet : public BlinkyMode {
+class Comet : public MercatorMode {
   public:
   Comet(uint32_t color, int tail, int wait) : color_(color), tail_(tail), wait_(wait) {}
   void run();
@@ -166,7 +163,7 @@ class Comet : public BlinkyMode {
   int wait_;
 };
 
-class DoubleWipe : public BlinkyMode {
+class DoubleWipe : public MercatorMode {
   public:
   DoubleWipe(uint32_t color1, uint32_t color2, int wait) : color1_(color1), color2_(color2), wait_(wait) {}
   void run();
@@ -175,13 +172,25 @@ class DoubleWipe : public BlinkyMode {
   int wait_;
 };
 
-class Pulse : public BlinkyMode {
+class Pulse : public MercatorMode {
   public:
   Pulse(uint32_t color1, uint32_t color2, int wait) : color1_(color1), color2_(color2), wait_(wait) {}
   void run();
   private:
   uint32_t color1_, color2_;
   int wait_;
+};
+
+class LongitudinalMode : public MercatorMode {
+public:
+  LongitudinalMode(const deviceConfig_t *config)
+    : _brightness(config->brightness),
+      _color1(config->color1), _color2(config->color2),
+      _speed(config->speed) {}
+  void run();
+protected:
+  uint32_t _color1, _color2;
+  int _speed, _brightness;
 };
 
 #endif
