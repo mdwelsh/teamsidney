@@ -40,30 +40,24 @@ sensor.when_line = detect
 
 pwm = gpiozero.PWMOutputDevice(pin=17)
 pwm.on()
-duty_cycle = 0.0
-x = 0
-adjust_t1 = time.time()
+pwm.value = 0.1
+blink_t1 = time.time()
 
 while True:
-  
+  avg = rate_avg
+  if avg == 0.0:
+    avg = 0.001
+  period = 1.0 / avg
 
+  now = time.time()
+  delta = now - blink_t1
+  if delta > period:
+    print(f"rate {avg} period {period} delta {delta}")
+    blink_t1 = now
+    for index in range(NUM_PIXELS):
+      strip[index] = 0xFF0000
+    strip.show()
 
-  for index in range(NUM_PIXELS):
-    strip[index] = 0xFF0000
-  strip.show()
-
-  for index in range(NUM_PIXELS):
-    strip[index] = 0x000000
-  strip.show()
-
-  dt = time.time()
-  if (dt - adjust_t1) > 2.0:
-    if rate_avg < TARGET_RATE and duty_cycle < 1.0:
-      duty_cycle += 0.05
-    elif rate_avg > TARGET_RATE and duty_cycle > 0.0:		
-      duty_cycle -= 0.05
-    duty_cycle = max(0.0, min(1.0, duty_cycle))
-    pwm.value = duty_cycle
-    print(f'Speed: {rate_avg:.2f} Hz, setting duty_cycle to {duty_cycle}')
-    adjust_t1 = time.time()
-
+    for index in range(NUM_PIXELS):
+      strip[index] = 0x000000
+    strip.show()
