@@ -7,13 +7,29 @@
 #define CLOCKPIN   32
 Adafruit_DotStar strip(NUMPIXELS, DATAPIN, CLOCKPIN, DOTSTAR_BGR);
 
+#define BUTTONPIN  15
+
 void setup() {
+  pinMode(BUTTONPIN, INPUT_PULLUP);
   strip.begin();
   strip.show();
   strip.setBrightness(30);
 }
 
 void loop() {
+  if (digitalRead(BUTTONPIN) == LOW) {
+    for (int i = 0; i < NUMPIXELS; i++) {
+      strip.setPixelColor(i, 0xff0000);
+      strip.show();  
+    }
+  } else {
+    for (int i = 0; i < NUMPIXELS; i++) {
+      strip.setPixelColor(i, 0x00ff00);
+      strip.show();  
+    }
+  }
+
+#if 0 
   for (int i = 0; i < NUMPIXELS; i++) {
     strip.setPixelColor(i, 0xff0000);
     strip.show();  
@@ -34,4 +50,5 @@ void loop() {
     strip.show();  
     delay(20);
   }
+#endif
 }
