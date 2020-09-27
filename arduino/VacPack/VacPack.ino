@@ -8,9 +8,11 @@
 Adafruit_DotStar strip(NUMPIXELS, DATAPIN, CLOCKPIN, DOTSTAR_BGR);
 
 #define BUTTONPIN  15
+#define SFXPIN     33
 
 void setup() {
   pinMode(BUTTONPIN, INPUT_PULLUP);
+  pinMode(SFXPIN, OUTPUT);
   strip.begin();
   strip.show();
   strip.setBrightness(30);
@@ -18,11 +20,14 @@ void setup() {
 
 void loop() {
   if (digitalRead(BUTTONPIN) == LOW) {
+    digitalWrite(SFXPIN, 0);
+    
     for (int i = 0; i < NUMPIXELS; i++) {
       strip.setPixelColor(i, 0xff0000);
       strip.show();  
     }
   } else {
+    digitalWrite(SFXPIN, 1);
     for (int i = 0; i < NUMPIXELS; i++) {
       strip.setPixelColor(i, 0x00ff00);
       strip.show();  
