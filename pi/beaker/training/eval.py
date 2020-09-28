@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+import os
+
 import numpy as np
 import pandas as pd
 
@@ -26,7 +28,7 @@ from ignite.engine import (
     create_supervised_trainer,
     create_supervised_evaluator,
 )
-from ignite.handlers import ModelCheckpoint, EarlyStopping
+from ignite.handlers import Checkpoint, ModelCheckpoint, EarlyStopping
 from ignite.metrics import Accuracy, Loss, RunningAverage, ConfusionMatrix
 from ignite.contrib.handlers import ProgressBar
 
@@ -57,19 +59,7 @@ def get_data_loaders(data_dir, batch_size):
 print("Dataset classes:")
 print(classes)
 
-# dataiter = iter(train_loader)
-# images, labels = dataiter.next()
-# images = images.numpy()  # convert images to numpy for display
-#
-# matplotlib.use("GTK3Agg")
-## plot the images in the batch, along with the corresponding labels
-# fig = plt.figure(figsize=(25, 4))
-# for idx in np.arange(20):
-#    ax = fig.add_subplot(2, 20 / 2, idx + 1, xticks=[], yticks=[])
-#    plt.imshow(np.transpose(images[idx], (1, 2, 0)))
-#    ax.set_title(classes[labels[idx]])
-# plt.show()
-
+model = models.mobilenet_v2(pretrained=True)
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 print(f"Device is {device}")
 
@@ -78,8 +68,6 @@ print(model)
 print(f"Input features: {model.classifier[1].in_features}")
 print(f"Output features: {model.classifier[1].out_features}")
 
-writer = SummaryWriter(log_dir=LOG_DIR)
-
 # Remap output layer to number of classes in dataset.
 n_inputs = model.classifier[1].in_features
 last_layer = nn.Linear(n_inputs, len(classes))
@@ -87,6 +75,20 @@ model.classifier = last_layer
 if torch.cuda.is_available():
     model.cuda()
 print(f"Remapped output features: {model.classifier}")
+
+all_checkpoints = list(
+    sorted(
+        [
+            f
+            for f in os.listdir(CHECKPOINT_DIR)
+            if os.path.isfile(os.path.join(CHECKPOINT_DIR, f))
+        ]
+    )
+)
+last_checkpoint = "beaker_beaker_10981.pt"
+print(f"Loading checkpoint: {last_checkpoint}")
+checkpoint = torch.load(os.path.join(CHECKPOINT_DIR, last_checkpoint))
+Checkpoint.load_objects(to_load={"beaker": model}, checkpoint=checkpoint)
 
 
 def apply_test_transforms(inp):
@@ -125,6 +127,7 @@ predict(
     show_img=False,
 )
 
+# Run a Validation pass.
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(model.classifier.parameters(), lr=0.001, momentum=0.9)
 training_history = {"accuracy": [], "loss": []}
@@ -139,80 +142,13 @@ evaluator = create_supervised_evaluator(
         "cm": ConfusionMatrix(len(classes)),
     },
 )
-
-print(f"Trainer is: {trainer}")
-print(f"Evaluator is: {evaluator}")
-
-
-# @trainer.on(Events.ITERATION_COMPLETED)
-# def log_a_dot(engine):
-#    print(".", end="", flush=True)
-
-
-@trainer.on(Events.ITERATION_COMPLETED)
-def log_training_loss(engine):
-    print(
-        "Epoch[{}] Iteration[{}/{}] Loss: {:.2f}"
-        "".format(
-            engine.state.epoch,
-            engine.state.iteration,
-            len(train_loader),
-            engine.state.output,
-        )
-    )
-    writer.add_scalar("training/loss", engine.state.output, engine.state.iteration)
-
-
-@trainer.on(Events.EPOCH_COMPLETED)
-def log_training_results(trainer):
-    evaluator.run(train_loader)
-    metrics = evaluator.state.metrics
-    accuracy = metrics["accuracy"] * 100
-    loss = metrics["loss"]
-    training_history["accuracy"].append(accuracy)
-    training_history["loss"].append(loss)
-    print()
-    print(
-        "Training Results - Epoch: {}  Avg accuracy: {:.2f} Avg loss: {:.2f}".format(
-            trainer.state.epoch, accuracy, loss
-        )
-    )
-    writer.add_scalar("training/avg_loss", loss, trainer.state.epoch)
-    writer.add_scalar("training/avg_accuracy", accuracy, trainer.state.epoch)
-
-
-@trainer.on(Events.EPOCH_COMPLETED)
-def log_validation_results(trainer):
-    evaluator.run(val_loader)
-    metrics = evaluator.state.metrics
-    accuracy = metrics["accuracy"] * 100
-    loss = metrics["loss"]
-    validation_history["accuracy"].append(accuracy)
-    validation_history["loss"].append(loss)
-    print(
-        "Validation Results - Epoch: {}  Avg accuracy: {:.2f} Avg loss: {:.2f}".format(
-            trainer.state.epoch, accuracy, loss
-        )
-    )
-    writer.add_scalar("valdation/avg_loss", loss, trainer.state.epoch)
-    writer.add_scalar("valdation/avg_accuracy", accuracy, trainer.state.epoch)
-
-
-# Add checkpointing.
-checkpointer = ModelCheckpoint(
-    CHECKPOINT_DIR,
-    "beaker",
-    n_saved=None,
-    create_dir=True,
-    save_as_state_dict=True,
-    require_empty=False,
+evaluator.run(val_loader)
+metrics = evaluator.state.metrics
+accuracy = metrics["accuracy"] * 100
+loss = metrics["loss"]
+validation_history["accuracy"].append(accuracy)
+validation_history["loss"].append(loss)
+print(
+    "Validation Results - Avg accuracy: {:.2f} Avg loss: {:.2f}".format(accuracy, loss)
 )
-trainer.add_event_handler(Events.EPOCH_COMPLETED, checkpointer, {"beaker": model})
 
-
-# Do a quick training test run.
-print("Starting training run...")
-trainer.run(train_loader, max_epochs=MAX_EPOCHS)
-print("Done.")
-
-writer.close()
