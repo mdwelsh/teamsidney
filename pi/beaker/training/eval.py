@@ -36,6 +36,7 @@ LOG_DIR = "/home/mdw/tensorboard/"
 DATASET_DIR = "/home/mdw/datasets/CUB_200_2011/images/"
 CHECKPOINT_DIR = "/home/mdw/checkpoints/"
 MAX_EPOCHS = 1000
+BATCH_SIZE = 64
 
 
 def get_data_loaders(data_dir, batch_size):
@@ -55,7 +56,9 @@ def get_data_loaders(data_dir, batch_size):
     return ((train_loader, val_loader, test_loader), all_data.classes)
 
 
-(train_loader, val_loader, test_loader), classes = get_data_loaders(DATASET_DIR, 64)
+(train_loader, val_loader, test_loader), classes = get_data_loaders(
+    DATASET_DIR, BATCH_SIZE
+)
 print("Dataset classes:")
 print(classes)
 
@@ -152,3 +155,34 @@ print(
     "Validation Results - Avg accuracy: {:.2f} Avg loss: {:.2f}".format(accuracy, loss)
 )
 
+scripted_model = torch.jit.script(model)
+print(scripted_model.code)
+scripted_model.save("beaker_torchscript.zip")
+print("Saved TorchScript model to beaker_torchscript.zip")
+
+x = torch.randn(BATCH_SIZE, 3, 224, 224, requires_grad=True, device=device)
+
+#import time
+#t1 = time.time()
+#for _ in range(100):
+#  _ = model(x)
+#t2 = time.time()
+#ms_per_iter = ((t2-t1)*1000) / 100.0
+#print(f"Ran 100 iterations in {t2-t1} sec, {ms_per_iter} ms/iter")
+
+torch.onnx.export(
+    model,
+    x,
+    "beaker.onnx",
+    export_params=True,
+    opset_version=10,
+    do_constant_folding=True,
+    input_names=["input"],
+    output_names=["output"],
+    dynamic_axes={
+        "input": {0: "batch_size"},
+        "output": {0: "batch_size"},
+    },
+)
+
+print("Saved ONNX model to beaker.onnx")

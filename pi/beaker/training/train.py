@@ -125,7 +125,7 @@ predict(
     show_img=False,
 )
 
-criterion = nn.CrossEntropyLoss()
+c_model.code)riterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(model.classifier.parameters(), lr=0.001, momentum=0.9)
 training_history = {"accuracy": [], "loss": []}
 validation_history = {"accuracy": [], "loss": []}
