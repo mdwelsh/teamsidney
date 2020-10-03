@@ -50,43 +50,43 @@ camera {
 
 
 def gen_parts():
-  parts = []
-  for _ in range(NUM_PARTS):
-    part = random.choice(PARTS)
-    color = random.choice(COLORS)
+    parts = []
+    for _ in range(NUM_PARTS):
+        part = random.choice(PARTS)
+        color = random.choice(COLORS)
 
-    x = random.randint(0, 1000)
-    y = random.randint(0, 100)
-    z = random.randint(0, 1000)
+        x = random.randint(0, 1000)
+        y = random.randint(0, 100)
+        z = random.randint(0, 1000)
 
-    xrot = random.randint(0, 360) - 180
-    yrot = random.randint(0, 360) - 180
-    zrot = random.randint(0, 360) - 180
-    rot = Identity().rotate(x, XAxis).rotate(yrot, YAxis).rotate(zrot, ZAxis)
+        xrot = random.randint(0, 360) - 180
+        yrot = random.randint(0, 360) - 180
+        zrot = random.randint(0, 360) - 180
+        rot = Identity().rotate(x, XAxis).rotate(yrot, YAxis).rotate(zrot, ZAxis)
 
-    parts.append(Piece(color, Vector(x, y, z), rot, part))
-  return parts
+        parts.append(Piece(color, Vector(x, y, z), rot, part))
+    return parts
 
 
 def gen_pov(ldraw_path, pov_path):
-  model, parts = get_model(ldraw_path)
+    model, parts = get_model(ldraw_path)
 
-  with open(pov_path, "w") as pov_file:
-    pov_file.write('#include "colors.inc"\n\n')
-    writer = POVRayWriter(parts, pov_file)
-    writer.write(model)
-    pov_file.write(POV_TRAILER + '\n')
+    with open(pov_path, "w") as pov_file:
+        pov_file.write('#include "colors.inc"\n\n')
+        writer = POVRayWriter(parts, pov_file)
+        writer.write(model)
+        pov_file.write(POV_TRAILER + "\n")
 
 
 def main():
-  parts = gen_parts()
-  with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.ldr') as ldr:
-    for part in parts:
-      ldr.write(str(part) + '\n')
-  with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.pov') as pov:
-    pov.close()
-    gen_pov(ldr.name, pov.name)
-  print(f"povray -i{pov.name} +W1024 +H768 +fp -o- > o.png && open o.png")
+    parts = gen_parts()
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".ldr") as ldr:
+        for part in parts:
+            ldr.write(str(part) + "\n")
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".pov") as pov:
+        pov.close()
+        gen_pov(ldr.name, pov.name)
+    print(f"povray -i{pov.name} +W1024 +H768 +fp -o- > o.png && open o.png")
 
 
 if __name__ == "__main__":
