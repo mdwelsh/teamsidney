@@ -18,43 +18,51 @@ IMAGE_HEIGHT = 256
 
 
 PARTS = [
-    # Brick1X1,
-    # Brick1X2,
-    # Brick1X3,
-    # Brick1X6,
-    # Brick2X2,
+    Brick1X1,
+    Brick1X2,
+    Brick1X3,
+    Brick1X6,
+    Brick2X2,
     Brick2X3,
-    # Brick2X4,
+    Brick2X4,
 ]
 
-NUM_COLORS = 1
+NUM_COLORS = 10
 COLORS = list(ColoursByCode.values())[0:NUM_COLORS]
 
 
 LIGHTS = [
     [
-        (-200, -200, -200, 200),
+        (-200, -200, -200, 5000),
+        (-200, 200, -200, 5000),
     ],
     [
-        (200, -200, -200, 200),
+        (200, -200, -200, 5000),
+        (-200, 200, -200, 5000),
     ],
     [
-        (-200, 200, -200, 200),
+        (-200, 200, -200, 5000),
+        (-200, -200, -200, 5000),
     ],
     [
-        (200, 200, -200, 200),
+        (200, 200, -200, 5000),
+        (-200, -200, -200, 5000),
     ],
     [
-        (-200, -200, 200, 200),
+        (-200, -200, 200, 5000),
+        (200, 200, -200, 5000),
     ],
     [
-        (200, -200, 200, 200),
+        (200, -200, 200, 5000),
+        (200, 200, 200, 5000),
     ],
     [
-        (-200, 200, 200, 200),
+        (-200, 200, 200, 5000),
+        (-200, -200, -200, 5000),
     ],
     [
-        (200, 200, 200, 200),
+        (200, 200, 200, 5000),
+        (200, 200, -200, 5000),
     ],
 ]
 
@@ -81,10 +89,17 @@ LIGHT_SOURCE_TEMPLATE = """
 
 
 POV_TRAILER = """
+plane { <0, 1, 0>, -40
+    pigment {
+      rgb <0.1, 0.1, 0.1>
+    }
+  }
 background { color Black }
-
+global_settings {
+  ambient_light rgb<1, 1, 1>
+}
 camera {
-  location <-200.000000, 0.000000, 0.000000>
+  location <-200.000000, 200.000000, 0.000000>
   look_at <0.000000, 0.000000, 0.000000>
   up y
   right x
@@ -94,9 +109,11 @@ camera {
 
 
 def gen_piece(part, color, x=0, y=0, z=0):
+    # xrot = yrot = zrot = 45
+    xrot = random.randint(0, 360) - 180
     yrot = random.randint(0, 360) - 180
     zrot = random.randint(0, 360) - 180
-    rot = Identity().rotate(x, XAxis).rotate(yrot, YAxis).rotate(zrot, ZAxis)
+    rot = Identity().rotate(xrot, XAxis).rotate(yrot, YAxis).rotate(zrot, ZAxis)
     return Piece(color, Vector(x, y, z), rot, part)
 
 
