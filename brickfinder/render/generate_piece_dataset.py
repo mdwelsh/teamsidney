@@ -3,6 +3,7 @@
 import argparse
 import os
 import random
+import re
 import subprocess
 import tempfile
 
@@ -17,15 +18,21 @@ IMAGE_WIDTH = 256
 IMAGE_HEIGHT = 256
 
 
-PARTS = [
-    Brick1X1,
-    Brick1X2,
-    Brick1X3,
-    Brick1X6,
-    Brick2X2,
-    Brick2X3,
-    Brick2X4,
-]
+def get_all_parts():
+    parts = []
+    # Brick parts.
+    import ldraw.library.parts.brick as brick
+
+    parts.extend(
+        [p for p in brick.__dict__.keys() if re.match(r"^Brick(\d+)X(\d+)$", p)]
+    )
+    parts.extend(
+        [p for p in brick.__dict__.keys() if re.match(r"^Brick(\d+)X(\d+)X(\d+)$", p)]
+    )
+    return parts
+
+
+PARTS = get_all_parts()
 
 NUM_COLORS = 10
 COLORS = list(ColoursByCode.values())[0:NUM_COLORS]
@@ -74,19 +81,6 @@ LIGHT_SOURCE_TEMPLATE = """
     area_light x*70, y*70, 20, 20 circular orient adaptive 0 jitter
   }}
 """
-
-# light_source
-# { <0, 1900, 0>, 1
-#  fade_distance 1600 fade_power 2
-#  area_light x*70, y*70, 20, 20 circular orient adaptive 0 jitter
-# }
-#
-# light_source
-# { <2000, 1700, 0>, <1,.8,.4>
-#  fade_distance 1000 fade_power 2
-#  area_light x*70, y*70, 20, 20 circular orient adaptive 0 jitter
-# }
-
 
 POV_TRAILER = """
 plane { <0, 1, 0>, -40
