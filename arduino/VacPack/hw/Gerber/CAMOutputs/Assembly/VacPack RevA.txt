@@ -1,0 +1,9 @@
+Partlist exported from /Users/mdw/Documents/EAGLE/projects/VacPack Board/VacPack RevA.sch at 9/19/20 4:05 PM
+
+Qty Value Device     Package Parts      Description POPULARITY
+2         PINHD-1X11 1X11    SFX1, SFX2 PIN HEADER  12        
+1         PINHD-1X12 1X12    HUZZAH12   PIN HEADER  28        
+1         PINHD-1X16 1X16    HUZZAH16   PIN HEADER  17        
+1         PINHD-1X2  1X02    BUTTON     PIN HEADER  98        
+1         PINHD-1X4  1X04    LED        PIN HEADER  91        
+1         PINHD-1X5  1X05    AMP        PIN HEADER  69        
