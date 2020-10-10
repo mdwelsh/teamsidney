@@ -24,10 +24,18 @@ def get_all_parts():
     import ldraw.library.parts.brick as brick
 
     parts.extend(
-        [p for p in brick.__dict__.keys() if re.match(r"^Brick(\d+)X(\d+)$", p)]
+        [
+            brick.__dict__[p]
+            for p in brick.__dict__.keys()
+            if re.match(r"^Brick(\d+)X(\d+)$", p)
+        ]
     )
     parts.extend(
-        [p for p in brick.__dict__.keys() if re.match(r"^Brick(\d+)X(\d+)X(\d+)$", p)]
+        [
+            brick.__dict__[p]
+            for p in brick.__dict__.keys()
+            if re.match(r"^Brick(\d+)X(\d+)X(\d+)$", p)
+        ]
     )
     return parts
 
