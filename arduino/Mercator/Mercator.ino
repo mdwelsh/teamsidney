@@ -16,11 +16,18 @@ Adafruit_DotStar strip(NUMPIXELS, DATAPIN, CLOCKPIN, DOTSTAR_BGR);
 #define LEDC_TIMER_13_BIT 13
 #define LEDC_BASE_FREQ 10000
 
-#define HALL_COUNT 10
+#define BRIGHTNESS 20
+#define NUM_COLUMNS 40
 
 int cur_hall = 0;
 int leds_on = false;
 int hall_count = 0;
+int cur_step = 0;
+uint32_t last_hall_time = 0;
+uint32_t cycle_time = 0;
+uint32_t per_column_time = 0;
+uint32_t next_column_time = 0;
+
 
 // Interpolate between color1 and color2. mix represents the amount of color2.
 uint32_t interpolate(uint32_t color1, uint32_t color2, float mix) {
@@ -39,6 +46,21 @@ uint32_t interpolate(uint32_t color1, uint32_t color2, float mix) {
   return r3 | g3 | b3;
 }
 
+// Input a value 0 to 255 to get a color value.
+// The colours are a transition r - g - b - back to r.
+uint32_t color_wheel(byte WheelPos) {
+  WheelPos = 255 - WheelPos;
+  if(WheelPos < 85) {
+    return strip.Color(255 - WheelPos * 3, 0, WheelPos * 3);
+  }
+  if(WheelPos < 170) {
+    WheelPos -= 85;
+    return strip.Color(0, WheelPos * 3, 255 - WheelPos * 3);
+  }
+  WheelPos -= 170;
+  return strip.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
+}
+
 // Arduino like analogWrite
 // value has to be between 0 and valueMax
 void ledcAnalogWrite(uint8_t channel, uint32_t value, uint32_t valueMax = 255) {
@@ -54,6 +76,8 @@ void setup() {
   pinMode(PWMPIN, OUTPUT);
   pinMode(POTPIN, INPUT);
   pinMode(SIGNALPIN, OUTPUT);
+  last_hall_time = micros();
+  next_column_time = micros();
 
   ledcSetup(LEDC_CHANNEL_0, LEDC_BASE_FREQ, LEDC_TIMER_13_BIT);
   ledcAttachPin(PWMPIN, LEDC_CHANNEL_0);
@@ -61,7 +85,7 @@ void setup() {
   
   strip.begin();
   strip.show();
-  strip.setBrightness(30);
+  strip.setBrightness(BRIGHTNESS);
   for (int i = 0; i < NUMPIXELS; i++) {
     strip.setPixelColor(i, 0xff0000);
     strip.show();  
@@ -84,13 +108,73 @@ void setup() {
 
 }
 
+void do_testpattern() {
+  int color;
+  if (leds_on) {
+    color = 0xffffff;
+    leds_on = false;
+  } else {
+    color = 0xff0000;
+    leds_on = true;
+  }
+  for (int i = 0; i < NUMPIXELS/2; i++) {
+    strip.setPixelColor(i, color);
+  }
+  for (int i = NUMPIXELS/2; i < NUMPIXELS; i++) {
+    strip.setPixelColor(i, 0x0);
+  }
+  strip.show();
+  //digitalWrite(SIGNALPIN, leds_on);  // To measure.
+}
+
+uint32_t get_color(int stp) {
+   if (stp == 0) {
+     digitalWrite(SIGNALPIN, 0);
+     return 0xff0000;
+   } else if (stp == NUM_COLUMNS/2) {
+     digitalWrite(SIGNALPIN, 1);
+     return 0x0000ff;
+   } else {
+     return 0x0;
+   }
+}
+
+void doPaint(uint32_t cur_time) {
+  if (cur_time < next_column_time) {
+    return;
+  }
+
+  int color = get_color(cur_step);
+  cur_step++;
+  for (int i = 0; i < NUMPIXELS; i++) {
+    strip.setPixelColor(i, color);
+  }
+  strip.show();
+  next_column_time = cur_time + per_column_time;
+}
 
 void loop() {
   int potVal = analogRead(POTPIN);
   ledcAnalogWrite(LEDC_CHANNEL_0, potVal >> 4);
 
+  uint32_t cur_time = micros();
   int hall = digitalRead(HALLPIN);
-  
+
+  if (hall == LOW && cur_hall == 0) {
+    if (cur_time - last_hall_time > 1000) {  // Debounce.
+      cur_hall = 1;
+      cur_step = 0; // Reset cycle.
+      cycle_time = cur_time - last_hall_time;
+      per_column_time = cycle_time / NUM_COLUMNS;
+      next_column_time = cur_time + per_column_time;
+      last_hall_time = cur_time;
+    }
+  } else if (hall == HIGH && cur_hall == 1) {
+    cur_hall = 0;
+  }
+  doPaint(cur_time);
+
+#if 0
   if (hall == LOW && cur_hall == 0) {
     // Hall effect trigger on pin going low.
     cur_hall = 1;
@@ -100,7 +184,7 @@ void loop() {
       hall_count = 0;
       int color;
       if (leds_on) {
-        color = 0x0;
+        color = 0x000000;
         leds_on = false;
       } else {
         color = 0xff0000;
@@ -115,5 +199,6 @@ void loop() {
   } else if (hall == HIGH && cur_hall == 1) {
     cur_hall = 0;
   }
+#endif
 
 }
