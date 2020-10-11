@@ -1,6 +1,7 @@
 
 #include <Adafruit_DotStar.h>
-#include <SPI.h>         // COMMENT OUT THIS LINE FOR GEMMA OR TRINKET
+#include <SPI.h>
+#include "image.h"
 
 #define NUMPIXELS 72 // Number of LEDs in strip
 #define DATAPIN    14
@@ -16,7 +17,7 @@ Adafruit_DotStar strip(NUMPIXELS, DATAPIN, CLOCKPIN, DOTSTAR_BGR);
 #define LEDC_TIMER_13_BIT 13
 #define LEDC_BASE_FREQ 10000
 
-#define BRIGHTNESS 20
+#define BRIGHTNESS 40
 #define NUM_COLUMNS 40
 
 int cur_hall = 0;
@@ -127,16 +128,30 @@ void do_testpattern() {
   //digitalWrite(SIGNALPIN, leds_on);  // To measure.
 }
 
-uint32_t get_color(int stp) {
-   if (stp == 0) {
-     digitalWrite(SIGNALPIN, 0);
-     return 0xff0000;
-   } else if (stp == NUM_COLUMNS/2) {
-     digitalWrite(SIGNALPIN, 1);
-     return 0x0000ff;
-   } else {
-     return 0x0;
-   }
+uint32_t get_color(int x, int y) {
+
+  x -= 16;
+  y -= 16;
+  if (x < 0 || x > IMAGE_COLUMNS-1) return 0x0;
+  if (y < 0 || y > IMAGE_ROWS-1) return 0x0;
+ 
+  uint32_t pixel = IMAGE[(y * IMAGE_COLUMNS) + x];
+  if (pixel != 0) {
+    pixel = interpolate(0xff0000, 0x0000ff, (y * 1.0)/IMAGE_ROWS);
+  }
+  return pixel;
+
+//     return interpolate(0xff0000, 0x0000ff, (y * 1.0)/(NUMPIXELS/2.0));
+  
+//   if (x == 0) {
+//     digitalWrite(SIGNALPIN, 0);
+//     return 0xff0000;
+//   } else if (x == NUM_COLUMNS/2) {
+//     digitalWrite(SIGNALPIN, 1);
+//     return 0x0000ff;
+//   } else {
+//     return 0x0;
+//   }
 }
 
 void doPaint(uint32_t cur_time) {
@@ -144,12 +159,12 @@ void doPaint(uint32_t cur_time) {
     return;
   }
 
-  int color = get_color(cur_step);
-  cur_step++;
-  for (int i = 0; i < NUMPIXELS; i++) {
-    strip.setPixelColor(i, color);
+  for (int i = 0; i < NUMPIXELS/2; i++) {
+    int y = (NUMPIXELS/2) - i;   // Swap y-axis.
+    strip.setPixelColor(i, get_color(cur_step, y));
   }
   strip.show();
+  cur_step++;
   next_column_time = cur_time + per_column_time;
 }
 
