@@ -9,22 +9,18 @@ Adafruit_DotStar strip(NUMPIXELS, DATAPIN, CLOCKPIN, DOTSTAR_BGR);
 
 #define HALLPIN  15
 #define PWMPIN A0
+#define POTPIN A1
+#define SIGNALPIN 33
 
 #define LEDC_CHANNEL_0 0
 #define LEDC_TIMER_13_BIT 13
-#define LEDC_BASE_FREQ 1000
+#define LEDC_BASE_FREQ 10000
 
+#define HALL_COUNT 10
 
-#define COLOR_SLOW 0x30eaff
-#define COLOR_FAST 0xff369d
-#define DELAY_SLOW 2
-#define DELAY_FAST 1
-#define TAIL_LENGTH 30
-
-int cur_color = COLOR_SLOW;
-int cur_head = 0;
-int cur_tail = -TAIL_LENGTH;
-int cur_delay = DELAY_SLOW;
+int cur_hall = 0;
+int leds_on = false;
+int hall_count = 0;
 
 // Interpolate between color1 and color2. mix represents the amount of color2.
 uint32_t interpolate(uint32_t color1, uint32_t color2, float mix) {
@@ -56,11 +52,12 @@ void ledcAnalogWrite(uint8_t channel, uint32_t value, uint32_t valueMax = 255) {
 void setup() {
   pinMode(HALLPIN, INPUT_PULLUP);
   pinMode(PWMPIN, OUTPUT);
+  pinMode(POTPIN, INPUT);
+  pinMode(SIGNALPIN, OUTPUT);
 
   ledcSetup(LEDC_CHANNEL_0, LEDC_BASE_FREQ, LEDC_TIMER_13_BIT);
   ledcAttachPin(PWMPIN, LEDC_CHANNEL_0);
   ledcAnalogWrite(LEDC_CHANNEL_0, 100); // This seems to work pretty well with a 1 KHz PWM clock.
-
   
   strip.begin();
   strip.show();
@@ -87,32 +84,36 @@ void setup() {
 
 }
 
-void run_animation() {
-  for (int i = 0; i < TAIL_LENGTH; i++) {
-    int color = interpolate(cur_color, 0x000000, (i*1.0)/(TAIL_LENGTH * 1.0));
-    strip.setPixelColor(cur_head - i, color);
-  }
-  strip.setPixelColor(cur_tail, 0x0);
-  strip.show();
-  delay(cur_delay);
-  if(++cur_head >= NUMPIXELS) cur_head = 0;
-  if(++cur_tail >= NUMPIXELS) cur_tail = 0;
-}
 
 void loop() {
-  //run_animation();
-  
-  if (digitalRead(HALLPIN) == LOW) {
-    // Hall effect trigger
-    for (int i = 0; i < NUMPIXELS; i++) {
-        strip.setPixelColor(i, 0xff0000);
-    }
-    strip.show();
+  int potVal = analogRead(POTPIN);
+  ledcAnalogWrite(LEDC_CHANNEL_0, potVal >> 4);
 
-  } else {
-    for (int i = 0; i < NUMPIXELS; i++) {
-        strip.setPixelColor(i, 0x0000ff);
+  int hall = digitalRead(HALLPIN);
+  
+  if (hall == LOW && cur_hall == 0) {
+    // Hall effect trigger on pin going low.
+    cur_hall = 1;
+    hall_count++;
+
+    if (hall_count == HALL_COUNT) {
+      hall_count = 0;
+      int color;
+      if (leds_on) {
+        color = 0x0;
+        leds_on = false;
+      } else {
+        color = 0xff0000;
+        leds_on = true;
+      }  
+      for (int i = 0; i < NUMPIXELS; i++) {
+        strip.setPixelColor(i, color);
+      }
+      strip.show();
     }
-    strip.show();
+    
+  } else if (hall == HIGH && cur_hall == 1) {
+    cur_hall = 0;
   }
+
 }
