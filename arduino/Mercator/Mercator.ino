@@ -1,7 +1,7 @@
 
 #include <Adafruit_DotStar.h>
 #include <SPI.h>
-#include "image.h"
+#include "tse.h"
 
 #define NUMPIXELS 72 // Number of LEDs in strip
 #define DATAPIN    14
@@ -134,12 +134,20 @@ uint32_t get_color(int x, int y) {
   y -= 16;
   if (x < 0 || x > IMAGE_COLUMNS-1) return 0x0;
   if (y < 0 || y > IMAGE_ROWS-1) return 0x0;
- 
   uint32_t pixel = IMAGE[(y * IMAGE_COLUMNS) + x];
   if (pixel != 0) {
     pixel = interpolate(0xff0000, 0x0000ff, (y * 1.0)/IMAGE_ROWS);
   }
   return pixel;
+
+//  if (x < 0 || x > IMAGE_COLUMNS-1) return 0x0;
+//  if (y < 0 || y > IMAGE_ROWS-1) return 0x0;
+//  int index = (y * IMAGE_COLUMNS * 4) + (x * 4);
+//  uint8_t* p = (uint8_t*)&IMAGE[index];
+//  uint32_t* pv = (uint32_t*)p;
+//  uint32_t pixel = *pv;
+
+//  return pixel;
 
 //     return interpolate(0xff0000, 0x0000ff, (y * 1.0)/(NUMPIXELS/2.0));
   
