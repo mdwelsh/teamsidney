@@ -1,7 +1,21 @@
 
 #include <Adafruit_DotStar.h>
 #include <SPI.h>
+
 #include "earth.h"
+#define IMAGE IMAGE_earth
+#define IMAGE_COLUMNS IMAGE_COLUMNS_earth
+#define IMAGE_ROWS IMAGE_ROWS_earth
+
+//#include "hollowknight.h"
+//#define IMAGE IMAGE_hollowknight
+//#define IMAGE_COLUMNS IMAGE_COLUMNS_hollowknight
+//#define IMAGE_ROWS IMAGE_ROWS_hollowknight
+
+//#include "hline.h"
+//#define IMAGE IMAGE_hline
+//#define IMAGE_COLUMNS IMAGE_COLUMNS_hline
+//#define IMAGE_ROWS IMAGE_ROWS_hline
 
 #define NUMPIXELS 72 // Number of LEDs in strip
 #define DATAPIN    14
@@ -17,17 +31,33 @@ Adafruit_DotStar strip(NUMPIXELS, DATAPIN, CLOCKPIN, DOTSTAR_BGR);
 #define LEDC_TIMER_13_BIT 13
 #define LEDC_BASE_FREQ 10000
 
-#define BRIGHTNESS 40
+#define BRIGHTNESS 20
 #define NUM_COLUMNS IMAGE_COLUMNS
 
+#define IDLE_TIME 1000000
+#define ALPHA 0.5
+//#define FRONT_STRIP_ONLY
+//#define WARN_IF_TOO_FAST
+#define X_SHIFT 0
+#define Y_SHIFT 0
+#define BACK_OFFSET 3
+#define ROTATE_INTERVAL 20000
+
 int cur_hall = 0;
-int leds_on = false;
-int hall_count = 0;
 int cur_step = 0;
+int cur_x_offset = 0;
 uint32_t last_hall_time = 0;
+uint32_t last_rotate_time = 0;
 uint32_t cycle_time = 0;
 uint32_t per_column_time = 0;
 uint32_t next_column_time = 0;
+
+void setAll(uint32_t color) {
+  for (int i = 0; i < NUMPIXELS; i++) {
+    strip.setPixelColor(i, color);
+  }
+  strip.show();
+}
 
 
 // Interpolate between color1 and color2. mix represents the amount of color2.
@@ -82,64 +112,22 @@ void setup() {
 
   ledcSetup(LEDC_CHANNEL_0, LEDC_BASE_FREQ, LEDC_TIMER_13_BIT);
   ledcAttachPin(PWMPIN, LEDC_CHANNEL_0);
-  ledcAnalogWrite(LEDC_CHANNEL_0, 100); // This seems to work pretty well with a 1 KHz PWM clock.
+  ledcAnalogWrite(LEDC_CHANNEL_0, 100);
   
   strip.begin();
   strip.show();
   strip.setBrightness(BRIGHTNESS);
-  for (int i = 0; i < NUMPIXELS; i++) {
-    strip.setPixelColor(i, 0xff0000);
-    strip.show();  
-  }
+  setAll(0xff0000);
   delay(200);
-  for (int i = 0; i < NUMPIXELS; i++) {
-    strip.setPixelColor(i, 0x00ff00);
-    strip.show();  
-  }
+  setAll(0x00ff00);
   delay(200);
-  for (int i = 0; i < NUMPIXELS; i++) {
-    strip.setPixelColor(i, 0x0000ff);
-    strip.show();  
-  }
+  setAll(0x0000ff);
   delay(200);
-  for (int i = 0; i < NUMPIXELS; i++) {
-      strip.setPixelColor(i, 0x00000);
-  }
+  setAll(0x0);
   strip.show();
-
-}
-
-void do_testpattern() {
-  int color;
-  if (leds_on) {
-    color = 0xffffff;
-    leds_on = false;
-  } else {
-    color = 0xff0000;
-    leds_on = true;
-  }
-  for (int i = 0; i < NUMPIXELS/2; i++) {
-    strip.setPixelColor(i, color);
-  }
-  for (int i = NUMPIXELS/2; i < NUMPIXELS; i++) {
-    strip.setPixelColor(i, 0x0);
-  }
-  strip.show();
-  //digitalWrite(SIGNALPIN, leds_on);  // To measure.
 }
 
 uint32_t get_color(int x, int y) {
-
-//  x -= 16;
-//  y -= 16;
-//  if (x < 0 || x > IMAGE_COLUMNS-1) return 0x0;
-//  if (y < 0 || y > IMAGE_ROWS-1) return 0x0;
-//  uint32_t pixel = IMAGE[(y * IMAGE_COLUMNS) + x];
-//  if (pixel != 0) {
-//    pixel = interpolate(0xff0000, 0x0000ff, (y * 1.0)/IMAGE_ROWS);
-//  }
-//  return pixel;
-
   if (x < 0 || x > IMAGE_COLUMNS-1) return 0x0;
   if (y < 0 || y > IMAGE_ROWS-1) return 0x0;
   int index = (y * IMAGE_COLUMNS * 3) + (x * 3);
@@ -147,29 +135,33 @@ uint32_t get_color(int x, int y) {
   uint32_t* pv = (uint32_t*)p;
   uint32_t pixel = *pv;
   return pixel;
-
-//     return interpolate(0xff0000, 0x0000ff, (y * 1.0)/(NUMPIXELS/2.0));
-  
-//   if (x == 0) {
-//     digitalWrite(SIGNALPIN, 0);
-//     return 0xff0000;
-//   } else if (x == NUM_COLUMNS/2) {
-//     digitalWrite(SIGNALPIN, 1);
-//     return 0x0000ff;
-//   } else {
-//     return 0x0;
-//   }
 }
 
 void doPaint(uint32_t cur_time) {
   if (cur_time < next_column_time) {
     return;
   }
+  
+  int x = (cur_step - X_SHIFT + cur_x_offset) % NUM_COLUMNS;
+  int frontx = x;
+  int backx = (x + (NUM_COLUMNS/2)) % NUM_COLUMNS;
 
+  // Front strip.
   for (int i = 0; i < NUMPIXELS/2; i++) {
     int y = (NUMPIXELS/2) - i;   // Swap y-axis.
-    strip.setPixelColor(i, get_color(cur_step, y));
+    strip.setPixelColor(i, get_color(frontx, y));
   }
+
+  // Back strip.
+  for (int i = NUMPIXELS/2; i < NUMPIXELS; i++) {
+    int y = i - (NUMPIXELS/2) + BACK_OFFSET;
+#ifdef FRONT_STRIP_ONLY
+    strip.setPixelColor(i, 0x0);
+#else
+    strip.setPixelColor(i, get_color(backx, y));
+#endif
+  }
+
   strip.show();
   cur_step++;
   next_column_time = cur_time + per_column_time;
@@ -183,43 +175,43 @@ void loop() {
   int hall = digitalRead(HALLPIN);
 
   if (hall == LOW && cur_hall == 0) {
-    if (cur_time - last_hall_time > 1000) {  // Debounce.
+    if (cur_time - last_hall_time > 10000) {  // Debounce.
+#ifdef HALLDEBUG
+    setAll(0xff0000);
+#endif      
       cur_hall = 1;
-      cur_step = 0; // Reset cycle.
-      cycle_time = cur_time - last_hall_time;
-      per_column_time = cycle_time / NUM_COLUMNS;
-      next_column_time = cur_time + per_column_time;
-      last_hall_time = cur_time;
-    }
-  } else if (hall == HIGH && cur_hall == 1) {
-    cur_hall = 0;
-  }
-  doPaint(cur_time);
 
-#if 0
-  if (hall == LOW && cur_hall == 0) {
-    // Hall effect trigger on pin going low.
-    cur_hall = 1;
-    hall_count++;
-
-    if (hall_count == HALL_COUNT) {
-      hall_count = 0;
-      int color;
-      if (leds_on) {
-        color = 0x000000;
-        leds_on = false;
-      } else {
-        color = 0xff0000;
-        leds_on = true;
-      }  
-      for (int i = 0; i < NUMPIXELS; i++) {
-        strip.setPixelColor(i, color);
+#ifdef WARN_IF_TOO_FAST
+      if (cur_step < NUM_COLUMNS-2) {
+        setAll(0xff0000);
       }
-      strip.show();
+#endif
+
+      cur_step = 0; // Reset cycle.
+      cycle_time = (ALPHA * cycle_time) + ((1.0 - ALPHA) * (cur_time - last_hall_time));
+      per_column_time = (cycle_time / NUM_COLUMNS);
+      next_column_time = cur_time - per_column_time;
+      last_hall_time = cur_time;
+
+#ifdef ROTATE_INTERVAL
+      if (cur_time - last_rotate_time > ROTATE_INTERVAL) {
+        cur_x_offset++;
+        last_rotate_time = cur_time;
+      }
+#endif
+
     }
-    
   } else if (hall == HIGH && cur_hall == 1) {
     cur_hall = 0;
+#ifdef HALLDEBUG
+    setAll(0x0);
+#endif
+  }
+#ifndef HALLDEBUG
+  if (cur_time - last_hall_time < IDLE_TIME) {
+    doPaint(cur_time);
+  } else {
+    setAll(0x0);
   }
 #endif
 
