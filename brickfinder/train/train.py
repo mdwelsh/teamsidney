@@ -32,6 +32,8 @@ from ignite.metrics import Accuracy, Loss, RunningAverage, ConfusionMatrix
 from ignite.contrib.handlers import ProgressBar
 
 import wandb
+from darknet19 import darknet as darknet
+
 
 WORKLOAD = "brickfinder"
 LOG_DIR = "/home/mdw/tensorboard/"
@@ -74,23 +76,26 @@ print(classes)
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 print(f"Device is {device}")
 
-model = models.mobilenet_v2(pretrained=True)
+# For MobileNet v2.
+#model = models.mobilenet_v2(pretrained=True)
+# Remap output layer to number of classes in dataset.
+#n_inputs = model.classifier[1].in_features
+#last_layer = nn.Linear(n_inputs, len(classes))
+#model.classifier = last_layer
+
+# For DarkNet19.
+model = darknet.Darknet19(pretrained=False, n_classes=len(classes))
+
 print(model)
-print(f"Input features: {model.classifier[1].in_features}")
-print(f"Output features: {model.classifier[1].out_features}")
 
 writer = SummaryWriter(log_dir=LOG_DIR)
 
-# Remap output layer to number of classes in dataset.
-n_inputs = model.classifier[1].in_features
-last_layer = nn.Linear(n_inputs, len(classes))
-model.classifier = last_layer
 if torch.cuda.is_available():
     model.cuda()
 print(f"Remapped output features: {model.classifier}")
+print(f"Remapped model: {model}")
 
 wandb.watch(model)
-
 
 def apply_test_transforms(inp):
     out = transforms.functional.resize(inp, [224, 224])
