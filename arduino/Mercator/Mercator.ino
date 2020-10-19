@@ -4,7 +4,7 @@
 
 #include "earth.h"
 #include "jackolantern.h"
-#include "tselogo.h"
+#include "octoml.h"
 #include "tabbyslime.h"
 #include "hollowknight.h"
 
@@ -20,7 +20,7 @@ typedef struct _image_metadata {
 image_metadata images[NUM_IMAGES] = {
   MAKEIMAGE(IMAGE_earth, IMAGE_COLUMNS_earth, IMAGE_ROWS_earth),
   MAKEIMAGE(IMAGE_jackolantern, IMAGE_COLUMNS_jackolantern, IMAGE_ROWS_jackolantern),
-  MAKEIMAGE(IMAGE_tselogo, IMAGE_COLUMNS_tselogo, IMAGE_ROWS_tselogo),
+  MAKEIMAGE(IMAGE_octoml, IMAGE_COLUMNS_octoml, IMAGE_ROWS_octoml),
   MAKEIMAGE(IMAGE_tabby, IMAGE_COLUMNS_tabby, IMAGE_ROWS_tabby),
   MAKEIMAGE(IMAGE_hollowknight, IMAGE_COLUMNS_hollowknight, IMAGE_ROWS_hollowknight),
 };
