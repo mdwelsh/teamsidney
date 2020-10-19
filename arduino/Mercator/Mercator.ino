@@ -3,9 +3,32 @@
 #include <SPI.h>
 
 #include "earth.h"
-#define IMAGE IMAGE_earth
-#define IMAGE_COLUMNS IMAGE_COLUMNS_earth
-#define IMAGE_ROWS IMAGE_ROWS_earth
+#include "jackolantern.h"
+#include "tselogo.h"
+#include "tabbyslime.h"
+#include "hollowknight.h"
+
+typedef struct _image_metadata {
+  uint8_t* data;
+  int columns;
+  int rows;
+} image_metadata;
+
+#define MAKEIMAGE(_name, _columns, _rows) (image_metadata){ data: (uint8_t*)&_name[0], columns: _columns, rows: _rows, }
+
+#define NUM_IMAGES 5
+image_metadata images[NUM_IMAGES] = {
+  MAKEIMAGE(IMAGE_earth, IMAGE_COLUMNS_earth, IMAGE_ROWS_earth),
+  MAKEIMAGE(IMAGE_jackolantern, IMAGE_COLUMNS_jackolantern, IMAGE_ROWS_jackolantern),
+  MAKEIMAGE(IMAGE_tselogo, IMAGE_COLUMNS_tselogo, IMAGE_ROWS_tselogo),
+  MAKEIMAGE(IMAGE_tabby, IMAGE_COLUMNS_tabby, IMAGE_ROWS_tabby),
+  MAKEIMAGE(IMAGE_hollowknight, IMAGE_COLUMNS_hollowknight, IMAGE_ROWS_hollowknight),
+};
+
+//#include "earth.h"
+//#define IMAGE IMAGE_earth
+//#define IMAGE_COLUMNS IMAGE_COLUMNS_earth
+//#define IMAGE_ROWS IMAGE_ROWS_earth
 
 //#include "hollowknight.h"
 //#define IMAGE IMAGE_hollowknight
@@ -26,18 +49,19 @@ Adafruit_DotStar strip(NUMPIXELS, DATAPIN, CLOCKPIN, DOTSTAR_BGR);
 #define PWMPIN A0
 #define POTPIN A1
 #define SIGNALPIN 33
+#define BUTTONPIN 27
 
 #define LEDC_CHANNEL_0 0
 #define LEDC_TIMER_13_BIT 13
 #define LEDC_BASE_FREQ 10000
 
 #define BRIGHTNESS 20
-#define NUM_COLUMNS IMAGE_COLUMNS
+#define NUM_COLUMNS 72
 
 #define IDLE_TIME 1000000
 #define ALPHA 0.5
 //#define FRONT_STRIP_ONLY
-//#define WARN_IF_TOO_FAST
+#define WARN_IF_TOO_FAST
 #define X_SHIFT 0
 #define Y_SHIFT 0
 #define BACK_OFFSET 3
@@ -48,9 +72,13 @@ int cur_step = 0;
 int cur_x_offset = 0;
 uint32_t last_hall_time = 0;
 uint32_t last_rotate_time = 0;
+uint32_t last_button_time = 0;
 uint32_t cycle_time = 0;
 uint32_t per_column_time = 0;
 uint32_t next_column_time = 0;
+
+int cur_image_index = 0;
+image_metadata *cur_image = &images[cur_image_index];
 
 void setAll(uint32_t color) {
   for (int i = 0; i < NUMPIXELS; i++) {
@@ -107,6 +135,8 @@ void setup() {
   pinMode(PWMPIN, OUTPUT);
   pinMode(POTPIN, INPUT);
   pinMode(SIGNALPIN, OUTPUT);
+  pinMode(BUTTONPIN, INPUT_PULLUP);
+
   last_hall_time = micros();
   next_column_time = micros();
 
@@ -128,10 +158,10 @@ void setup() {
 }
 
 uint32_t get_color(int x, int y) {
-  if (x < 0 || x > IMAGE_COLUMNS-1) return 0x0;
-  if (y < 0 || y > IMAGE_ROWS-1) return 0x0;
-  int index = (y * IMAGE_COLUMNS * 3) + (x * 3);
-  uint8_t* p = (uint8_t*)&IMAGE[index];
+  if (x < 0 || x > cur_image->columns-1) return 0x0;
+  if (y < 0 || y > cur_image->rows-1) return 0x0;
+  int index = (y * cur_image->columns * 3) + (x * 3);
+  uint8_t* p = (uint8_t*)&cur_image->data[index];
   uint32_t* pv = (uint32_t*)p;
   uint32_t pixel = *pv;
   return pixel;
@@ -168,10 +198,19 @@ void doPaint(uint32_t cur_time) {
 }
 
 void loop() {
+  uint32_t cur_time = micros();
+
   int potVal = analogRead(POTPIN);
   ledcAnalogWrite(LEDC_CHANNEL_0, potVal >> 4);
 
-  uint32_t cur_time = micros();
+  int btn = digitalRead(BUTTONPIN);
+  if (btn == LOW && cur_time - last_button_time > 100000) {
+    last_button_time = cur_time;
+    cur_image_index++;
+    cur_image_index %= NUM_IMAGES;
+    cur_image = &images[cur_image_index];
+  }
+
   int hall = digitalRead(HALLPIN);
 
   if (hall == LOW && cur_hall == 0) {

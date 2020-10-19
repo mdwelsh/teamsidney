@@ -7,7 +7,7 @@ from PIL import Image
 def process_image(infile, width, height, outfile, name, outimage=False):
     img = Image.open(infile)
     img = img.convert('RGB')
-    img = img.resize((width, height))
+    img = img.resize((width, height), resample=Image.NEAREST)
 
     if outimage:
         img.save(outfile)
@@ -30,7 +30,7 @@ def process_image(infile, width, height, outfile, name, outimage=False):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--name", type=str)
+    parser.add_argument("--name", type=str, required=True)
     parser.add_argument("--width", type=int, default=72)
     parser.add_argument("--height", type=int, default=36)
     parser.add_argument("--outimage", action="store_true")
