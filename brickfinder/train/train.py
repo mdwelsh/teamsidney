@@ -40,7 +40,7 @@ LOG_DIR = "/home/mdw/tensorboard/"
 DATASET_DIR = "/home/mdw/datasets/brick-dataset/images/"
 CHECKPOINT_DIR = "/home/mdw/checkpoints/"
 MAX_EPOCHS = 100
-INITIAL_LR = 0.01
+INITIAL_LR = 0.001
 MOMENTUM = 0.9
 GAMMA = 0.1
 
@@ -77,14 +77,14 @@ device = "cuda:0" if torch.cuda.is_available() else "cpu"
 print(f"Device is {device}")
 
 # For MobileNet v2.
-#model = models.mobilenet_v2(pretrained=True)
+model = models.mobilenet_v2(pretrained=True)
 # Remap output layer to number of classes in dataset.
-#n_inputs = model.classifier[1].in_features
-#last_layer = nn.Linear(n_inputs, len(classes))
-#model.classifier = last_layer
+n_inputs = model.classifier[1].in_features
+last_layer = nn.Linear(n_inputs, len(classes))
+model.classifier = last_layer
 
 # For DarkNet19.
-model = darknet.Darknet19(pretrained=False, n_classes=len(classes))
+#model = darknet.Darknet19(pretrained=False, n_classes=len(classes))
 
 print(model)
 
