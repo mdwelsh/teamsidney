@@ -50,8 +50,7 @@ Adafruit_DotStar strip(NUMPIXELS, DATAPIN, CLOCKPIN, DOTSTAR_BGR);
 #define HALLPIN  15
 #define PWMPIN A0
 #define POTPIN A1
-#define SIGNALPIN 33
-#define BUTTONPIN 27
+#define BUTTONPIN 33
 
 #define LEDC_CHANNEL_0 0
 #define LEDC_TIMER_13_BIT 13
@@ -136,7 +135,6 @@ void setup() {
   pinMode(HALLPIN, INPUT_PULLUP);
   pinMode(PWMPIN, OUTPUT);
   pinMode(POTPIN, INPUT);
-  pinMode(SIGNALPIN, OUTPUT);
   pinMode(BUTTONPIN, INPUT_PULLUP);
 
   last_hall_time = micros();
