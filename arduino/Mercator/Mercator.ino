@@ -68,6 +68,7 @@ Adafruit_DotStar strip(NUMPIXELS, DATAPIN, CLOCKPIN, DOTSTAR_BGR);
 #define BACK_OFFSET 3
 #define ROTATE_INTERVAL 20000
 
+int started = 0;
 int cur_hall = 0;
 int cur_step = 0;
 int cur_x_offset = 0;
@@ -77,6 +78,7 @@ uint32_t last_button_time = 0;
 uint32_t cycle_time = 0;
 uint32_t per_column_time = 0;
 uint32_t next_column_time = 0;
+uint32_t start_button_pressed = 0;
 
 int cur_image_index = 0;
 image_metadata *cur_image = &images[cur_image_index];
@@ -132,6 +134,7 @@ void ledcAnalogWrite(uint8_t channel, uint32_t value, uint32_t valueMax = 255) {
 }
 
 void setup() {
+  pinMode(LED_BUILTIN, OUTPUT);
   pinMode(HALLPIN, INPUT_PULLUP);
   pinMode(PWMPIN, OUTPUT);
   pinMode(POTPIN, INPUT);
@@ -140,10 +143,7 @@ void setup() {
   last_hall_time = micros();
   next_column_time = micros();
 
-  ledcSetup(LEDC_CHANNEL_0, LEDC_BASE_FREQ, LEDC_TIMER_13_BIT);
-  ledcAttachPin(PWMPIN, LEDC_CHANNEL_0);
-  ledcAnalogWrite(LEDC_CHANNEL_0, 100);
-  
+
   strip.begin();
   strip.show();
   strip.setBrightness(BRIGHTNESS);
@@ -197,9 +197,52 @@ void doPaint(uint32_t cur_time) {
   next_column_time = cur_time + per_column_time;
 }
 
+#define PULSE_LOW 0x0
+#define PULSE_HIGH 0x404040
+#define PULSE_STEP 0.001
+float cur_pulse = 0.0;
+float pulse_step;
+
+void pulse() {
+  if (cur_pulse <= 0.0) {
+    pulse_step = PULSE_STEP;
+  } else if (cur_pulse >= 1.0) {
+    pulse_step = -PULSE_STEP;
+  }
+  cur_pulse += pulse_step;
+  setAll(interpolate(PULSE_LOW, PULSE_HIGH, cur_pulse));
+}
+
 void loop() {
   uint32_t cur_time = micros();
 
+#ifdef BUTTONDEBUG
+  int btn = digitalRead(BUTTONPIN);
+  if (btn == LOW) {
+    digitalWrite(LED_BUILTIN, HIGH);
+  } else {
+    digitalWrite(LED_BUILTIN, LOW);
+  }
+  return;
+#endif
+  
+  if (!started) {
+    int btn = digitalRead(BUTTONPIN);
+    if (btn == HIGH) {
+      start_button_pressed = 0;
+    } else if (start_button_pressed == 0 && btn == LOW) {
+      start_button_pressed = cur_time;
+    } else if (start_button_pressed > 0 && cur_time - start_button_pressed > 1000000 && btn == LOW) {
+      setAll(0x00ff00);
+      delay(250);
+      started = 1;
+      ledcSetup(LEDC_CHANNEL_0, LEDC_BASE_FREQ, LEDC_TIMER_13_BIT);
+      ledcAttachPin(PWMPIN, LEDC_CHANNEL_0);
+      return;
+    }
+    pulse();
+    return;
+  }
   int potVal = analogRead(POTPIN);
   ledcAnalogWrite(LEDC_CHANNEL_0, potVal >> 4);
 
