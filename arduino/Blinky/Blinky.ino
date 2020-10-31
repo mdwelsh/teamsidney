@@ -45,21 +45,21 @@ deviceConfig_t nextConfig;
 #ifdef TEST_CONFIG
 // Only used for testing.
 deviceConfig_t testConfig = (deviceConfig_t) {
-  "spaceinvaders",
+  "runner",
   true,
   NUMPIXELS,
   DEFAULT_DATA_PIN,
   DEFAULT_CLOCK_PIN,
-  5,   // Color change.
+  0,   // Color change.
   50, // Brightness.
-  10, // Speed.
+  20, // Speed.
   0xff0000,   // Color1.
-  0xff00ff,   // Color2.
+  0x0000ff,   // Color2.
   ""   // Firmware.
 };
 #endif
 
-// We maintain the strip as a global variable mainly because it can be different types.
+// We maintain the strip as a global variable mainly because i1 t can be different types.
 #ifdef USE_NEOPIXEL
 Adafruit_NeoPixel *strip;
 #else

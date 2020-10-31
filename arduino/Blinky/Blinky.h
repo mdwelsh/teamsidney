@@ -33,7 +33,7 @@
 #endif
 
 // Start with this many pixels, but can be reconfigured.
-#define NUMPIXELS 144
+#define NUMPIXELS 180
 // Maximum number, for the sake of maintaining state.
 #define MAX_PIXELS 350
 #define NEOPIXEL_DATA_PIN 14

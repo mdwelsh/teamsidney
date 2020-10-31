@@ -84,6 +84,9 @@ BlinkyMode* BlinkyMode::Create(const deviceConfig_t *config) {
     PixelMapper *m = new RandomColorMapper(config, colors, 2);
     return new Rain(config, m, strip->numPixels(), 0.7, 0.8, 0.6, 0.1, 0.1, 0.1, false, true);
   }
+  if (!strcmp(config->mode, "runner")) {
+    return new Runner(config, strip->numPixels()/2, 1);
+  }
   if (!strcmp(config->mode, "fade")) {
     uint32_t *colors = (uint32_t *)malloc(2 * sizeof(uint32_t));
     colors[0] = config->color1;
@@ -167,6 +170,50 @@ void PixelMapper::run() {
   strip->show();
   ColorChangingMode::run();
   delay(_speed);
+}
+
+uint32_t Runner::PixelColor(int index) {
+  uint32_t color = 0;
+  float distance;
+  int numpixels = strip->numPixels();
+
+  if (_head1+_tail < numpixels) {
+    if ((index >= _head1) && (index <= _head1+_tail)) {
+      distance = ((index - _head1)*1.0)/(_tail * 1.0);
+      color = interpolate(0, _color1, distance); 
+    }
+  } else {
+     if (index >= _head1) {
+       distance = ((index - _head1)*1.0)/(_tail * 1.0);
+       color = interpolate(0, _color1, distance); 
+     } else if (index <= ((_head1+_tail) % numpixels)) {
+       distance = ((index + numpixels - _head1)*1.0)/(_tail * 1.0);
+       color = interpolate(0, _color1, distance);
+     }
+  }
+
+  if (_head2+_tail < numpixels) {
+    if ((index >= _head2) && (index <= _head2+_tail)) {
+      distance = ((index - _head2)*1.0)/(_tail * 1.0);
+      color = interpolate(0, _color2, distance); 
+    }
+  } else {
+     if (index >= _head2) {
+       distance = ((index - _head2)*1.0)/(_tail * 1.0);
+       color = interpolate(0, _color2, distance); 
+     } else if (index <= ((_head2+_tail) % numpixels)) {
+       distance = ((index + numpixels - _head2)*1.0)/(_tail * 1.0);
+       color = interpolate(0, _color2, distance);
+     }
+  }
+
+  if (index == strip->numPixels() - 1) {
+    _head1 += _direction;
+    _head2 += _direction;
+    _head1 %= strip->numPixels();
+    _head2 %= strip->numPixels();  
+  }
+  return color;
 }
 
 uint32_t Twinkler::PixelColor(int index) {

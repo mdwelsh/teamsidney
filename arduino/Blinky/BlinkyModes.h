@@ -109,6 +109,17 @@ private:
   int _wheel;
 };
 
+class Runner : public PixelMapper {
+public:
+  Runner(const deviceConfig_t* config, int tail, int direction) : PixelMapper(config), _tail(tail), _direction(direction) {
+    _head1 = 0;
+    _head2 = strip->numPixels() / 2;
+  }
+  uint32_t PixelColor(int index);
+private:
+  int _head1, _head2, _tail, _direction;
+};
+
 class Twinkler : public PixelMapper {
 public:
   Twinkler(const deviceConfig_t* config, PixelMapper *mapper, int stepRange, float minBrightness,
