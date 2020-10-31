@@ -54,7 +54,7 @@ Adafruit_DotStar strip(NUMPIXELS, DATAPIN, CLOCKPIN, DOTSTAR_BGR);
 
 #define LEDC_CHANNEL_0 0
 #define LEDC_TIMER_13_BIT 13
-#define LEDC_BASE_FREQ 10000
+#define LEDC_BASE_FREQ 1000
 
 #define BRIGHTNESS 20
 #define NUM_COLUMNS 72
@@ -139,11 +139,12 @@ void setup() {
   pinMode(PWMPIN, OUTPUT);
   pinMode(POTPIN, INPUT);
   pinMode(BUTTONPIN, INPUT_PULLUP);
+  ledcSetup(LEDC_CHANNEL_0, LEDC_BASE_FREQ, LEDC_TIMER_13_BIT);
+  ledcAttachPin(PWMPIN, LEDC_CHANNEL_0);
 
   last_hall_time = micros();
   next_column_time = micros();
-
-
+  
   strip.begin();
   strip.show();
   strip.setBrightness(BRIGHTNESS);
@@ -216,18 +217,16 @@ void pulse() {
 void loop() {
   uint32_t cur_time = micros();
 
-#ifdef BUTTONDEBUG
   int btn = digitalRead(BUTTONPIN);
   if (btn == LOW) {
     digitalWrite(LED_BUILTIN, HIGH);
   } else {
     digitalWrite(LED_BUILTIN, LOW);
   }
-  return;
-#endif
-  
+
+#define SAFE_START
+#ifdef SAFE_START
   if (!started) {
-    int btn = digitalRead(BUTTONPIN);
     if (btn == HIGH) {
       start_button_pressed = 0;
     } else if (start_button_pressed == 0 && btn == LOW) {
@@ -236,23 +235,25 @@ void loop() {
       setAll(0x00ff00);
       delay(250);
       started = 1;
-      ledcSetup(LEDC_CHANNEL_0, LEDC_BASE_FREQ, LEDC_TIMER_13_BIT);
-      ledcAttachPin(PWMPIN, LEDC_CHANNEL_0);
+
       return;
     }
     pulse();
     return;
   }
+#endif  // SAFE_START
+  
   int potVal = analogRead(POTPIN);
   ledcAnalogWrite(LEDC_CHANNEL_0, potVal >> 4);
 
-  int btn = digitalRead(BUTTONPIN);
+#if 0
   if (btn == LOW && cur_time - last_button_time > 100000) {
     last_button_time = cur_time;
     cur_image_index++;
     cur_image_index %= NUM_IMAGES;
     cur_image = &images[cur_image_index];
   }
+#endif
 
   int hall = digitalRead(HALLPIN);
 

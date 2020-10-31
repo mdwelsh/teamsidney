@@ -44,18 +44,23 @@ def spherical_deform(img, out_height=None):
     # Map from 0 .. in_height -> 1 .. -1
     slope = -2.0 / in_height
     offset = 1.0
+    last_out_row = 0
 
     for in_row in range(in_height):
-        in_row_scaled = math.floor(slope * in_row + offset)
+        in_row_scaled = slope * in_row + offset
         theta = math.asin(in_row_scaled)
-        pixel_num = (theta / out_height)
+        #pixel_num = (theta / out_height)
         # Map from pi/2 .. -pi/2 -> 0 .. out_height
-        m = out_height / math.pi 
-        b = -math.pi/2.0
-        out_row = math.floor((m * pixel_num) + b)
-        # TODO(mdw): Do a better job at resampling.
-        for x in range(in_width):
-            out_pixels[x, out_row] = in_pixels[x, in_row]
+        m = out_height / -math.pi 
+        b = out_height / 2
+        target_row = math.floor((m * theta) + b)
+        if in_row == in_height-1:
+            target_row = out_height-1
+        print(f"Row {in_row} -> {target_row}")
+        for out_row in range(last_out_row, target_row+1):
+            for x in range(in_width):
+                out_pixels[x, out_row] = in_pixels[x, in_row]
+        last_out_row = target_row
     out_img.save("MDW.png")
     return img  # TODO(mdw): finish this.
 
