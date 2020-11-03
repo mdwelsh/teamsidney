@@ -56,26 +56,20 @@ def spherical_deform(img, out_height=None):
         target_row = math.floor((m * theta) + b)
         if in_row == in_height-1:
             target_row = out_height-1
-        print(f"Row {in_row} -> {target_row}")
+        # print(f"Row {in_row} -> {target_row}")
         for out_row in range(last_out_row, target_row+1):
             for x in range(in_width):
                 out_pixels[x, out_row] = in_pixels[x, in_row]
         last_out_row = target_row
-    out_img.save("MDW.png")
-    return img  # TODO(mdw): finish this.
+    return out_img
 
 
-def process_image(infile, outfile, width, height, name, outimage=False, spherical=False):
+def process_image(infile, outfile, name, width, height, outimage=False, spherical=False):
     img = Image.open(infile)
     img = img.convert("RGB")
-
     if spherical:
         img = spherical_deform(img)
-
-    return
-
     img = img.resize((width, height), resample=Image.NEAREST)
-
     if outimage:
         img.save(outfile)
         print(f"Saved scaled image to {outfile}")

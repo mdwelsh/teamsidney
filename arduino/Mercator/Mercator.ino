@@ -5,9 +5,11 @@
 #include "earth.h"
 #include "jackolantern.h"
 #include "octoml.h"
+#include "octoml2.h"
 #include "octoml_name.h"
 #include "tabbyslime.h"
-#include "hollowknight.h"
+//#include "hollowknight.h"
+#include "hollowknight2.h"
 
 typedef struct _image_metadata {
   uint8_t* data;
@@ -24,23 +26,9 @@ image_metadata images[NUM_IMAGES] = {
   MAKEIMAGE(IMAGE_octoml, IMAGE_COLUMNS_octoml, IMAGE_ROWS_octoml),
   MAKEIMAGE(IMAGE_octoml_name, IMAGE_COLUMNS_octoml_name, IMAGE_ROWS_octoml_name),
   MAKEIMAGE(IMAGE_tabby, IMAGE_COLUMNS_tabby, IMAGE_ROWS_tabby),
-  MAKEIMAGE(IMAGE_hollowknight, IMAGE_COLUMNS_hollowknight, IMAGE_ROWS_hollowknight),
+  //MAKEIMAGE(IMAGE_hollowknight, IMAGE_COLUMNS_hollowknight, IMAGE_ROWS_hollowknight),
+  MAKEIMAGE(IMAGE_hollowknight2, IMAGE_COLUMNS_hollowknight2, IMAGE_ROWS_hollowknight2),
 };
-
-//#include "earth.h"
-//#define IMAGE IMAGE_earth
-//#define IMAGE_COLUMNS IMAGE_COLUMNS_earth
-//#define IMAGE_ROWS IMAGE_ROWS_earth
-
-//#include "hollowknight.h"
-//#define IMAGE IMAGE_hollowknight
-//#define IMAGE_COLUMNS IMAGE_COLUMNS_hollowknight
-//#define IMAGE_ROWS IMAGE_ROWS_hollowknight
-
-//#include "hline.h"
-//#define IMAGE IMAGE_hline
-//#define IMAGE_COLUMNS IMAGE_COLUMNS_hline
-//#define IMAGE_ROWS IMAGE_ROWS_hline
 
 #define NUMPIXELS 72 // Number of LEDs in strip
 #define DATAPIN    14
@@ -49,12 +37,14 @@ Adafruit_DotStar strip(NUMPIXELS, DATAPIN, CLOCKPIN, DOTSTAR_BGR);
 
 #define HALLPIN  15
 #define PWMPIN A0
-#define POTPIN A1
+#define SPEEDPOT A1
+#define BRTPOT A2
+#define SHIFTPOT A3
 #define BUTTONPIN 33
 
 #define LEDC_CHANNEL_0 0
 #define LEDC_TIMER_13_BIT 13
-#define LEDC_BASE_FREQ 1000
+#define LEDC_BASE_FREQ 10000
 
 #define BRIGHTNESS 20
 #define NUM_COLUMNS 72
@@ -66,7 +56,7 @@ Adafruit_DotStar strip(NUMPIXELS, DATAPIN, CLOCKPIN, DOTSTAR_BGR);
 #define X_SHIFT 0
 #define Y_SHIFT 0
 #define BACK_OFFSET 3
-#define ROTATE_INTERVAL 20000
+#define ROTATE_INTERVAL 10000
 
 int started = 0;
 int cur_hall = 0;
@@ -89,7 +79,6 @@ void setAll(uint32_t color) {
   }
   strip.show();
 }
-
 
 // Interpolate between color1 and color2. mix represents the amount of color2.
 uint32_t interpolate(uint32_t color1, uint32_t color2, float mix) {
@@ -137,7 +126,9 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(HALLPIN, INPUT_PULLUP);
   pinMode(PWMPIN, OUTPUT);
-  pinMode(POTPIN, INPUT);
+  pinMode(SPEEDPOT, INPUT);
+  pinMode(SHIFTPOT, INPUT);
+  pinMode(BRTPOT, INPUT);
   pinMode(BUTTONPIN, INPUT_PULLUP);
   ledcSetup(LEDC_CHANNEL_0, LEDC_BASE_FREQ, LEDC_TIMER_13_BIT);
   ledcAttachPin(PWMPIN, LEDC_CHANNEL_0);
@@ -198,12 +189,12 @@ void doPaint(uint32_t cur_time) {
   next_column_time = cur_time + per_column_time;
 }
 
+// White pulsing while waiting to start.
 #define PULSE_LOW 0x0
 #define PULSE_HIGH 0x404040
 #define PULSE_STEP 0.001
 float cur_pulse = 0.0;
 float pulse_step;
-
 void pulse() {
   if (cur_pulse <= 0.0) {
     pulse_step = PULSE_STEP;
@@ -235,7 +226,6 @@ void loop() {
       setAll(0x00ff00);
       delay(250);
       started = 1;
-
       return;
     }
     pulse();
@@ -243,17 +233,19 @@ void loop() {
   }
 #endif  // SAFE_START
   
-  int potVal = analogRead(POTPIN);
-  ledcAnalogWrite(LEDC_CHANNEL_0, potVal >> 4);
+  int speedPotVal = analogRead(SPEEDPOT);
+  ledcAnalogWrite(LEDC_CHANNEL_0, speedPotVal >> 4);
+  
+  int shiftPotVal = analogRead(SHIFTPOT);
+  int brtPotVal = analogRead(BRTPOT);
+  strip.setBrightness(brtPotVal >> 4);
 
-#if 0
   if (btn == LOW && cur_time - last_button_time > 100000) {
     last_button_time = cur_time;
     cur_image_index++;
     cur_image_index %= NUM_IMAGES;
     cur_image = &images[cur_image_index];
   }
-#endif
 
   int hall = digitalRead(HALLPIN);
 
@@ -269,7 +261,6 @@ void loop() {
         setAll(0xff0000);
       }
 #endif
-
       cur_step = 0; // Reset cycle.
       cycle_time = (ALPHA * cycle_time) + ((1.0 - ALPHA) * (cur_time - last_hall_time));
       per_column_time = (cycle_time / NUM_COLUMNS);
@@ -278,9 +269,12 @@ void loop() {
 
 #ifdef ROTATE_INTERVAL
       if (cur_time - last_rotate_time > ROTATE_INTERVAL) {
-        cur_x_offset++;
+        cur_x_offset += shiftPotVal >> 6;
+        cur_x_offset %= NUM_COLUMNS;
         last_rotate_time = cur_time;
       }
+#else
+      cur_x_offset = shiftPotVal >> 5;
 #endif
 
     }
