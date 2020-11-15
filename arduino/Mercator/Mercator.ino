@@ -35,6 +35,7 @@ image_metadata images[NUM_IMAGES] = {
 #define CLOCKPIN   32
 Adafruit_DotStar strip(NUMPIXELS, DATAPIN, CLOCKPIN, DOTSTAR_BGR);
 
+//#define HALLDEBUG
 #define HALLPIN  15
 #define PWMPIN A0
 #define SPEEDPOT A1
@@ -132,6 +133,8 @@ void setup() {
   pinMode(BUTTONPIN, INPUT_PULLUP);
   ledcSetup(LEDC_CHANNEL_0, LEDC_BASE_FREQ, LEDC_TIMER_13_BIT);
   ledcAttachPin(PWMPIN, LEDC_CHANNEL_0);
+  ledcAnalogWrite(LEDC_CHANNEL_0, 0);
+
 
   last_hall_time = micros();
   next_column_time = micros();
