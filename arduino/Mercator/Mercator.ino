@@ -4,12 +4,14 @@
 
 #include "earth.h"
 #include "jackolantern.h"
+#include "tselogo.h"
 #include "octoml.h"
 #include "octoml2.h"
 #include "octoml_name.h"
 #include "tabbyslime.h"
-//#include "hollowknight.h"
 #include "hollowknight2.h"
+#include "deathstar.h"
+#include "deathstar2.h"
 
 typedef struct _image_metadata {
   uint8_t* data;
@@ -19,15 +21,17 @@ typedef struct _image_metadata {
 
 #define MAKEIMAGE(_name, _columns, _rows) (image_metadata){ data: (uint8_t*)&_name[0], columns: _columns, rows: _rows, }
 
-#define NUM_IMAGES 6
+#define NUM_IMAGES 9
 image_metadata images[NUM_IMAGES] = {
   MAKEIMAGE(IMAGE_earth, IMAGE_COLUMNS_earth, IMAGE_ROWS_earth),
   MAKEIMAGE(IMAGE_jackolantern, IMAGE_COLUMNS_jackolantern, IMAGE_ROWS_jackolantern),
+  MAKEIMAGE(IMAGE_tselogo, IMAGE_COLUMNS_tselogo, IMAGE_ROWS_tselogo),
   MAKEIMAGE(IMAGE_octoml, IMAGE_COLUMNS_octoml, IMAGE_ROWS_octoml),
   MAKEIMAGE(IMAGE_octoml_name, IMAGE_COLUMNS_octoml_name, IMAGE_ROWS_octoml_name),
   MAKEIMAGE(IMAGE_tabby, IMAGE_COLUMNS_tabby, IMAGE_ROWS_tabby),
-  //MAKEIMAGE(IMAGE_hollowknight, IMAGE_COLUMNS_hollowknight, IMAGE_ROWS_hollowknight),
   MAKEIMAGE(IMAGE_hollowknight2, IMAGE_COLUMNS_hollowknight2, IMAGE_ROWS_hollowknight2),
+  MAKEIMAGE(IMAGE_deathstar, IMAGE_COLUMNS_deathstar, IMAGE_ROWS_deathstar),
+  MAKEIMAGE(IMAGE_deathstar2, IMAGE_COLUMNS_deathstar2, IMAGE_ROWS_deathstar2),
 };
 
 #define NUMPIXELS 72 // Number of LEDs in strip
@@ -237,17 +241,21 @@ void loop() {
 #endif  // SAFE_START
   
   int speedPotVal = analogRead(SPEEDPOT);
-  ledcAnalogWrite(LEDC_CHANNEL_0, speedPotVal >> 4);
+  ledcAnalogWrite(LEDC_CHANNEL_0, speedPotVal >> 5);
   
   int shiftPotVal = analogRead(SHIFTPOT);
   int brtPotVal = analogRead(BRTPOT);
-  strip.setBrightness(brtPotVal >> 4);
+  strip.setBrightness(brtPotVal >> 6);
 
-  if (btn == LOW && cur_time - last_button_time > 100000) {
-    last_button_time = cur_time;
+  if (btn == HIGH) {
+    start_button_pressed = 0;
+  } else if (start_button_pressed == 0 && btn == LOW) {
+    start_button_pressed = cur_time;
+  } else if (start_button_pressed > 0 && cur_time - start_button_pressed > 250000 && btn == LOW) {
     cur_image_index++;
     cur_image_index %= NUM_IMAGES;
     cur_image = &images[cur_image_index];
+    start_button_pressed = 0;
   }
 
   int hall = digitalRead(HALLPIN);
@@ -272,7 +280,7 @@ void loop() {
 
 #ifdef ROTATE_INTERVAL
       if (cur_time - last_rotate_time > ROTATE_INTERVAL) {
-        cur_x_offset += shiftPotVal >> 6;
+        cur_x_offset += shiftPotVal >> 8;
         cur_x_offset %= NUM_COLUMNS;
         last_rotate_time = cur_time;
       }
