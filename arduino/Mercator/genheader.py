@@ -49,22 +49,24 @@ def spherical_deform(img, out_height=None):
     for in_row in range(in_height):
         in_row_scaled = slope * in_row + offset
         theta = math.asin(in_row_scaled)
-        #pixel_num = (theta / out_height)
+        # pixel_num = (theta / out_height)
         # Map from pi/2 .. -pi/2 -> 0 .. out_height
-        m = out_height / -math.pi 
+        m = out_height / -math.pi
         b = out_height / 2
         target_row = math.floor((m * theta) + b)
-        if in_row == in_height-1:
-            target_row = out_height-1
+        if in_row == in_height - 1:
+            target_row = out_height - 1
         # print(f"Row {in_row} -> {target_row}")
-        for out_row in range(last_out_row, target_row+1):
+        for out_row in range(last_out_row, target_row + 1):
             for x in range(in_width):
                 out_pixels[x, out_row] = in_pixels[x, in_row]
         last_out_row = target_row
     return out_img
 
 
-def process_image(infile, outfile, name, width, height, outimage=False, spherical=False):
+def process_image(
+    infile, outfile, name, width, height, outimage=False, spherical=False
+):
     img = Image.open(infile)
     img = img.convert("RGB")
     if spherical:
