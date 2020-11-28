@@ -21,6 +21,10 @@
 #include "hollowknight2.h"
 #include "deathstar.h"
 
+// Image data for Game of Life.
+#define IMAGE_ROWS_life 36
+#define IMAGE_COLUMNS_life 72
+static uint8_t IMAGE_life[IMAGE_COLUMNS_life * IMAGE_ROWS_life * 3];
 
 typedef struct _image_metadata {
   uint8_t* data;
@@ -30,7 +34,7 @@ typedef struct _image_metadata {
 
 #define MAKEIMAGE(_name, _columns, _rows) (image_metadata){ data: (uint8_t*)&_name[0], columns: _columns, rows: _rows, }
 
-#define NUM_IMAGES 8
+#define NUM_IMAGES 9
 image_metadata images[NUM_IMAGES] = {
   MAKEIMAGE(IMAGE_earth, IMAGE_COLUMNS_earth, IMAGE_ROWS_earth),
   MAKEIMAGE(IMAGE_jackolantern, IMAGE_COLUMNS_jackolantern, IMAGE_ROWS_jackolantern),
@@ -40,17 +44,14 @@ image_metadata images[NUM_IMAGES] = {
   MAKEIMAGE(IMAGE_tabby, IMAGE_COLUMNS_tabby, IMAGE_ROWS_tabby),
   MAKEIMAGE(IMAGE_hollowknight2, IMAGE_COLUMNS_hollowknight2, IMAGE_ROWS_hollowknight2),
   MAKEIMAGE(IMAGE_deathstar, IMAGE_COLUMNS_deathstar, IMAGE_ROWS_deathstar),
+  MAKEIMAGE(IMAGE_life, IMAGE_COLUMNS_life, IMAGE_ROWS_life),
 };
 
-// Game of Life data.
-#define LIFE_IMAGE_INDEX NUM_IMAGES
-#define IMAGE_ROWS_life 36
-#define IMAGE_COLUMNS_life 72
-static uint8_t IMAGE_life1[IMAGE_COLUMNS_life * IMAGE_ROWS_life * 3];
-static uint8_t IMAGE_life2[IMAGE_COLUMNS_life * IMAGE_ROWS_life * 3];
-image_metadata metadata_life1 = MAKEIMAGE(IMAGE_life1, IMAGE_COLUMNS_life, IMAGE_ROWS_life);
-image_metadata metadata_life2 = MAKEIMAGE(IMAGE_life2, IMAGE_COLUMNS_life, IMAGE_ROWS_life);
-uint8_t *cur_life_image = IMAGE_life1;
+#define LIFE_IMAGE_INDEX NUM_IMAGES-1
+// Binary count data for each GOL cell.
+static uint8_t life1[IMAGE_COLUMNS_life * IMAGE_ROWS_life];
+static uint8_t life2[IMAGE_COLUMNS_life * IMAGE_ROWS_life];
+uint8_t *cur_life = life1;
 
 // Number of LEDs in the strip.
 #define NUMPIXELS 72
@@ -169,41 +170,40 @@ void ledcAnalogWrite(uint8_t channel, uint32_t value, uint32_t valueMax = 255) {
   ledcWrite(channel, duty);
 }
 
-// Get the pixel value for the Life image data at the provided (x, y) position as a uint32_t.
-uint32_t getPixel(uint8_t *image, int x, int y) {
+// Get the pixel value for the Life image data at the provided (x, y) position as a uint8_t.
+uint8_t getPixel(uint8_t *image, int x, int y) {
   int xi = x % IMAGE_COLUMNS_life;
   int yi = y % IMAGE_ROWS_life;
-  int index = ((yi * IMAGE_COLUMNS_life) + xi) * 3;
-  return (image[index] << 16) | (image[index+1] << 8) | (image[index+2]);
+  int index = (yi * IMAGE_COLUMNS_life) + xi;
+  return image[index];
 }
 
 // Set the pixel value for the Life image data at the provided (x, y) position.
-void setPixel(uint8_t *image, int x, int y, uint32_t value) {
+void setPixel(uint8_t *image, int x, int y, uint8_t value) {
   int xi = x % IMAGE_COLUMNS_life;
   int yi = y % IMAGE_ROWS_life;
-  int index = ((yi * IMAGE_COLUMNS_life) + xi) * 3;
-  image[index] = (value >> 16) & 0xff;
-  image[index+1] = (value >> 8) & 0xff;
-  image[index+2] = value & 0xff;
+  int index = (yi * IMAGE_COLUMNS_life) + xi;
+  image[index] = value;
 }
 
-#define LIVE 0xffffff
+// Value for newly-live cells.
+#define LIVE 0xff
 
 // Initialize Game of Life data.
 void init_life() {
   for (int y = 0; y < IMAGE_ROWS_life; y++) {
     for (int x = 0; x < IMAGE_COLUMNS_life; x++) {
       if (random(0, 5) < 1) {
-        setPixel(cur_life_image, x, y, LIVE);
+        setPixel(cur_life, x, y, LIVE);
       } else {
-        setPixel(cur_life_image, x, y, 0);
+        setPixel(cur_life, x, y, 0);
       }
     }
   }
 }
 
 // Return the new value of the given Life pixel.
-uint32_t life(uint8_t *image, int x, int y) {
+uint8_t life(uint8_t *image, int x, int y) {
   int neighborCount = 0;
   if (getPixel(image, x-1, y-1) > 0) neighborCount++;
   if (getPixel(image, x-1, y) > 0) neighborCount++;
@@ -213,24 +213,31 @@ uint32_t life(uint8_t *image, int x, int y) {
   if (getPixel(image, x+1, y-1) > 0) neighborCount++;
   if (getPixel(image, x+1, y) > 0) neighborCount++;
   if (getPixel(image, x+1, y+1) > 0) neighborCount++;
-  uint32_t self = getPixel(image, x, y);
-  if (self > 0 && (neighborCount == 2 || neighborCount == 3)) return self;
+  uint8_t self = getPixel(image, x, y);
+  if (self > 0 && (neighborCount == 2 || neighborCount == 3)) {
+    if (self == 1) return 1;
+    else return self-1;  // Decay cells over time.
+  }
   if (self == 0 && neighborCount == 3) return LIVE;
   return 0;
 }
 
 // Evolve the Game of Life data by one step.
 void step_life() {
-  uint8_t *from = cur_life_image;
-  uint8_t *to = (cur_life_image == IMAGE_life1) ? IMAGE_life2 : IMAGE_life1;
+  uint8_t *from = cur_life;
+  uint8_t *to = (cur_life == life1) ? life2 : life1;
   for (int y = 0; y < IMAGE_ROWS_life; y++) {
     for (int x = 0; x < IMAGE_COLUMNS_life; x++) {
-      uint32_t val = life(from, x, y);
+      uint8_t val = life(from, x, y);
       setPixel(to, x, y, val);
+      uint32_t color = val == 0 ? 0 : color_wheel(val);
+      IMAGE_life[((y * IMAGE_COLUMNS_life) + x) * 3] = (color >> 16) & 0xff;
+      IMAGE_life[(((y * IMAGE_COLUMNS_life) + x) * 3) + 1] = (color >> 8) & 0xff;
+      IMAGE_life[(((y * IMAGE_COLUMNS_life) + x) * 3) + 2] = color & 0xff;
     }
   }
   // Swap from and to images.
-  cur_life_image = to;
+  cur_life = to;
 }
 
 void setup() {
@@ -268,7 +275,7 @@ uint32_t get_color(int x, int y) {
   int index = (y * cur_image->columns * 3) + (x * 3);
   uint8_t* p = (uint8_t*)&cur_image->data[index];
   uint32_t* pv = (uint32_t*)p;
-  uint32_t pixel = *pv;
+  uint32_t pixel = (*pv) & 0xffffff;
   return pixel;
 }
 
@@ -359,12 +366,10 @@ void loop() {
     start_button_pressed = cur_time;
   } else if (start_button_pressed > 0 && cur_time - start_button_pressed > 250000 && btn == LOW) {
     cur_image_index++;
-    cur_image_index %= (NUM_IMAGES+1); // Last image is reserved for Game of Life.
+    cur_image_index %= NUM_IMAGES;
+    cur_image = &images[cur_image_index];
     if (cur_image_index == LIFE_IMAGE_INDEX) {
       init_life();
-      cur_image = (cur_life_image == IMAGE_life1) ? &metadata_life1 : &metadata_life2;
-    } else {
-      cur_image = &images[cur_image_index];
     }
     start_button_pressed = 0;
   }
@@ -391,8 +396,10 @@ void loop() {
 
 #ifdef ROTATE_INTERVAL
       if (cur_time - last_rotate_time > ROTATE_INTERVAL) {
-        cur_x_offset += shiftPotVal >> 8;
-        cur_x_offset %= NUM_COLUMNS;
+        if (shiftPotVal > 512) {
+          cur_x_offset += shiftPotVal >> 8;
+          cur_x_offset %= NUM_COLUMNS;
+        }
         last_rotate_time = cur_time;
       }
 #else
@@ -401,7 +408,6 @@ void loop() {
 
       if (cur_image_index == LIFE_IMAGE_INDEX && cur_time - last_life_time > LIFE_INTERVAL) {
         step_life();
-        cur_image = (cur_life_image == IMAGE_life1) ? &metadata_life1 : &metadata_life2;
         last_life_time = cur_time;
       }
     }
