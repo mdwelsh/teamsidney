@@ -293,6 +293,9 @@ void show_clock() {
 }
 
 void setup() {
+  Serial.begin(115200);
+  Serial.println("Initializing...");
+  
   init_life();
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(HALLPIN, INPUT_PULLUP);
@@ -318,7 +321,6 @@ void setup() {
   setAll(0x0000ff);
   delay(200);
   
-
   // Connect to Wifi. Pulse strip blue while we're connecting.
   Serial.printf("Connecting to WiFi network: %s ", WIFI_SSID);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -442,6 +444,9 @@ void loop() {
   
   int speedPotVal = analogRead(SPEEDPOT);
   ledcAnalogWrite(LEDC_CHANNEL_0, speedPotVal >> 5);
+  Serial.printf("SpeedPotVal: %d\n", speedPotVal);
+  return;
+
   
   int shiftPotVal = analogRead(SHIFTPOT);
   int brtPotVal = analogRead(BRTPOT);
