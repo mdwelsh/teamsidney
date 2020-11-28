@@ -20,11 +20,7 @@
 #include "tabbyslime.h"
 #include "hollowknight2.h"
 #include "deathstar.h"
-#include "deathstar2.h"
 
-#define IMAGE_ROWS_life 36
-#define IMAGE_COLUMNS_life 72
-static uint8_t IMAGE_life[IMAGE_COLUMNS_life * IMAGE_ROWS_life * 3];
 
 typedef struct _image_metadata {
   uint8_t* data;
@@ -34,7 +30,7 @@ typedef struct _image_metadata {
 
 #define MAKEIMAGE(_name, _columns, _rows) (image_metadata){ data: (uint8_t*)&_name[0], columns: _columns, rows: _rows, }
 
-#define NUM_IMAGES 10
+#define NUM_IMAGES 8
 image_metadata images[NUM_IMAGES] = {
   MAKEIMAGE(IMAGE_earth, IMAGE_COLUMNS_earth, IMAGE_ROWS_earth),
   MAKEIMAGE(IMAGE_jackolantern, IMAGE_COLUMNS_jackolantern, IMAGE_ROWS_jackolantern),
@@ -44,12 +40,17 @@ image_metadata images[NUM_IMAGES] = {
   MAKEIMAGE(IMAGE_tabby, IMAGE_COLUMNS_tabby, IMAGE_ROWS_tabby),
   MAKEIMAGE(IMAGE_hollowknight2, IMAGE_COLUMNS_hollowknight2, IMAGE_ROWS_hollowknight2),
   MAKEIMAGE(IMAGE_deathstar, IMAGE_COLUMNS_deathstar, IMAGE_ROWS_deathstar),
-  MAKEIMAGE(IMAGE_deathstar2, IMAGE_COLUMNS_deathstar2, IMAGE_ROWS_deathstar2),
-  MAKEIMAGE(IMAGE_life, IMAGE_COLUMNS_life, IMAGE_ROWS_life),
 };
 
-// Index of the Game of Life image data.
-#define LIFE_IMAGE_INDEX 9
+// Game of Life data.
+#define LIFE_IMAGE_INDEX NUM_IMAGES
+#define IMAGE_ROWS_life 36
+#define IMAGE_COLUMNS_life 72
+static uint8_t IMAGE_life1[IMAGE_COLUMNS_life * IMAGE_ROWS_life * 3];
+static uint8_t IMAGE_life2[IMAGE_COLUMNS_life * IMAGE_ROWS_life * 3];
+image_metadata metadata_life1 = MAKEIMAGE(IMAGE_life1, IMAGE_COLUMNS_life, IMAGE_ROWS_life);
+image_metadata metadata_life2 = MAKEIMAGE(IMAGE_life2, IMAGE_COLUMNS_life, IMAGE_ROWS_life);
+uint8_t *cur_life_image = IMAGE_life1;
 
 // Number of LEDs in the strip.
 #define NUMPIXELS 72
@@ -100,7 +101,7 @@ Adafruit_DotStar strip(NUMPIXELS, DATAPIN, CLOCKPIN, DOTSTAR_BGR);
 // Time in microseconds to trigger next longitudinal shift in the image.
 #define ROTATE_INTERVAL 10000
 // Time in microseconds to step Game of Life simulation.
-#define LIFE_INTERVAL 500000
+#define LIFE_INTERVAL 200000
 
 int started = 0;
 int cur_hall = 0;
@@ -168,51 +169,51 @@ void ledcAnalogWrite(uint8_t channel, uint32_t value, uint32_t valueMax = 255) {
   ledcWrite(channel, duty);
 }
 
-// Get the pixel value for the given image data at the provided (x, y) position as a uint32_t.
-uint32_t getPixel(int x, int y, uint8_t* data, int rows, int columns) {
-  uint32_t val;
-  int xi = x % columns;
-  int yi = (y % rows) * 3;
-  val = data[(yi * columns) + xi] << 16;
-  val |= data[(yi * columns) + xi + 1] << 8;
-  val |= data[(yi * columns) + xi + 2]; 
-  return val;
+// Get the pixel value for the Life image data at the provided (x, y) position as a uint32_t.
+uint32_t getPixel(uint8_t *image, int x, int y) {
+  int xi = x % IMAGE_COLUMNS_life;
+  int yi = y % IMAGE_ROWS_life;
+  int index = ((yi * IMAGE_COLUMNS_life) + xi) * 3;
+  return (image[index] << 16) | (image[index+1] << 8) | (image[index+2]);
 }
 
-// Set the pixel value for the given image data at the provided (x, y) position.
-void setPixel(int x, int y, uint8_t* data, int rows, int columns, uint32_t value) {
-  int xi = x % columns;
-  int yi = (y % rows) * 3;
-  data[(yi * columns) + xi] = (value >> 16) & 0xff;
-  data[(yi * columns) + xi + 1] = (value >> 8) & 0xff;
-  data[(yi * columns) + xi + 2] = value & 0xff;
+// Set the pixel value for the Life image data at the provided (x, y) position.
+void setPixel(uint8_t *image, int x, int y, uint32_t value) {
+  int xi = x % IMAGE_COLUMNS_life;
+  int yi = y % IMAGE_ROWS_life;
+  int index = ((yi * IMAGE_COLUMNS_life) + xi) * 3;
+  image[index] = (value >> 16) & 0xff;
+  image[index+1] = (value >> 8) & 0xff;
+  image[index+2] = value & 0xff;
 }
 
 #define LIVE 0xffffff
 
 // Initialize Game of Life data.
 void init_life() {
-  for (int i = 0; i < IMAGE_ROWS_life * IMAGE_COLUMNS_life; i++) {
-    if (random(0, 2) != 0) {
-      IMAGE_life[i] = LIVE;
-    } else {
-      IMAGE_life[i] = 0;
+  for (int y = 0; y < IMAGE_ROWS_life; y++) {
+    for (int x = 0; x < IMAGE_COLUMNS_life; x++) {
+      if (random(0, 5) < 1) {
+        setPixel(cur_life_image, x, y, LIVE);
+      } else {
+        setPixel(cur_life_image, x, y, 0);
+      }
     }
   }
 }
 
 // Return the new value of the given Life pixel.
-uint32_t life(int x, int y) {
+uint32_t life(uint8_t *image, int x, int y) {
   int neighborCount = 0;
-  if (getPixel(x-1, y-1, IMAGE_life, IMAGE_ROWS_life, IMAGE_COLUMNS_life) > 0) neighborCount++;
-  if (getPixel(x-1, y, IMAGE_life, IMAGE_ROWS_life, IMAGE_COLUMNS_life) > 0) neighborCount++;
-  if (getPixel(x-1, y+1, IMAGE_life, IMAGE_ROWS_life, IMAGE_COLUMNS_life) > 0) neighborCount++;
-  if (getPixel(x, y-1, IMAGE_life, IMAGE_ROWS_life, IMAGE_COLUMNS_life) > 0) neighborCount++;
-  if (getPixel(x, y+1, IMAGE_life, IMAGE_ROWS_life, IMAGE_COLUMNS_life) > 0) neighborCount++;
-  if (getPixel(x+1, y-1, IMAGE_life, IMAGE_ROWS_life, IMAGE_COLUMNS_life) > 0) neighborCount++;
-  if (getPixel(x+1, y, IMAGE_life, IMAGE_ROWS_life, IMAGE_COLUMNS_life) > 0) neighborCount++;
-  if (getPixel(x+1, y+1, IMAGE_life, IMAGE_ROWS_life, IMAGE_COLUMNS_life) > 0) neighborCount++;
-  uint32_t self = getPixel(x, y, IMAGE_life, IMAGE_ROWS_life, IMAGE_COLUMNS_life);
+  if (getPixel(image, x-1, y-1) > 0) neighborCount++;
+  if (getPixel(image, x-1, y) > 0) neighborCount++;
+  if (getPixel(image, x-1, y+1) > 0) neighborCount++;
+  if (getPixel(image, x, y-1) > 0) neighborCount++;
+  if (getPixel(image, x, y+1) > 0) neighborCount++;
+  if (getPixel(image, x+1, y-1) > 0) neighborCount++;
+  if (getPixel(image, x+1, y) > 0) neighborCount++;
+  if (getPixel(image, x+1, y+1) > 0) neighborCount++;
+  uint32_t self = getPixel(image, x, y);
   if (self > 0 && (neighborCount == 2 || neighborCount == 3)) return self;
   if (self == 0 && neighborCount == 3) return LIVE;
   return 0;
@@ -220,19 +221,22 @@ uint32_t life(int x, int y) {
 
 // Evolve the Game of Life data by one step.
 void step_life() {
+  uint8_t *from = cur_life_image;
+  uint8_t *to = (cur_life_image == IMAGE_life1) ? IMAGE_life2 : IMAGE_life1;
   for (int y = 0; y < IMAGE_ROWS_life; y++) {
     for (int x = 0; x < IMAGE_COLUMNS_life; x++) {
-      int val = life(x, y);
-      setPixel(x, y, IMAGE_life, IMAGE_ROWS_life, IMAGE_COLUMNS_life, val);
+      uint32_t val = life(from, x, y);
+      setPixel(to, x, y, val);
     }
   }
+  // Swap from and to images.
+  cur_life_image = to;
 }
 
 void setup() {
   Serial.begin(115200);
   Serial.println("Initializing...");
   
-  init_life();
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(HALLPIN, INPUT_PULLUP);
   pinMode(PWMPIN, OUTPUT);
@@ -301,7 +305,7 @@ void doPaint(uint32_t cur_time) {
 // White pulsing while waiting to start.
 #define PULSE_LOW 0x0
 #define PULSE_HIGH 0x404040
-#define PULSE_STEP 0.001
+#define PULSE_STEP 0.0015
 float cur_pulse = 0.0;
 float pulse_step;
 void pulse() {
@@ -355,8 +359,13 @@ void loop() {
     start_button_pressed = cur_time;
   } else if (start_button_pressed > 0 && cur_time - start_button_pressed > 250000 && btn == LOW) {
     cur_image_index++;
-    cur_image_index %= NUM_IMAGES;
-    cur_image = &images[cur_image_index];
+    cur_image_index %= (NUM_IMAGES+1); // Last image is reserved for Game of Life.
+    if (cur_image_index == LIFE_IMAGE_INDEX) {
+      init_life();
+      cur_image = (cur_life_image == IMAGE_life1) ? &metadata_life1 : &metadata_life2;
+    } else {
+      cur_image = &images[cur_image_index];
+    }
     start_button_pressed = 0;
   }
 
@@ -370,7 +379,7 @@ void loop() {
       cur_hall = 1;
 
 #ifdef WARN_IF_TOO_FAST
-      if (cur_step < NUM_COLUMNS-2) {
+      if (cur_step < NUM_COLUMNS-2 && cur_image_index != LIFE_IMAGE_INDEX) {
         setAll(0xff0000);
       }
 #endif
@@ -392,6 +401,7 @@ void loop() {
 
       if (cur_image_index == LIFE_IMAGE_INDEX && cur_time - last_life_time > LIFE_INTERVAL) {
         step_life();
+        cur_image = (cur_life_image == IMAGE_life1) ? &metadata_life1 : &metadata_life2;
         last_life_time = cur_time;
       }
     }
