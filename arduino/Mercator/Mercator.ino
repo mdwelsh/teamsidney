@@ -9,13 +9,6 @@
 
 #include <Adafruit_DotStar.h>
 #include <SPI.h>
-#include <WiFi.h>
-#include "time.h"
-
-// This file should contain two definitions:
-// const char* WIFI_SSID       = "YOUR_SSID";
-// const char* WIFI_PASSWORD   = "YOUR_PASS";
-#include "wifi_secrets.h"
 
 // Include each of the images. These are generated using genheader.py.
 #include "earth.h"
@@ -29,18 +22,9 @@
 #include "deathstar.h"
 #include "deathstar2.h"
 
-// Include the bitmap font data.
-#include "zxpix.h"
-// Width and height for each character in the bitmap font.
-#define FONT_CHAR_WIDTH 7
-#define FONT_CHAR_HEIGHT 8
-
 #define IMAGE_ROWS_life 36
 #define IMAGE_COLUMNS_life 72
 static uint8_t IMAGE_life[IMAGE_COLUMNS_life * IMAGE_ROWS_life * 3];
-#define IMAGE_ROWS_clock 36
-#define IMAGE_COLUMNS_clock 72
-static uint8_t IMAGE_clock[IMAGE_COLUMNS_clock * IMAGE_ROWS_clock * 3];
 
 typedef struct _image_metadata {
   uint8_t* data;
@@ -50,7 +34,7 @@ typedef struct _image_metadata {
 
 #define MAKEIMAGE(_name, _columns, _rows) (image_metadata){ data: (uint8_t*)&_name[0], columns: _columns, rows: _rows, }
 
-#define NUM_IMAGES 11
+#define NUM_IMAGES 10
 image_metadata images[NUM_IMAGES] = {
   MAKEIMAGE(IMAGE_earth, IMAGE_COLUMNS_earth, IMAGE_ROWS_earth),
   MAKEIMAGE(IMAGE_jackolantern, IMAGE_COLUMNS_jackolantern, IMAGE_ROWS_jackolantern),
@@ -62,13 +46,10 @@ image_metadata images[NUM_IMAGES] = {
   MAKEIMAGE(IMAGE_deathstar, IMAGE_COLUMNS_deathstar, IMAGE_ROWS_deathstar),
   MAKEIMAGE(IMAGE_deathstar2, IMAGE_COLUMNS_deathstar2, IMAGE_ROWS_deathstar2),
   MAKEIMAGE(IMAGE_life, IMAGE_COLUMNS_life, IMAGE_ROWS_life),
-  MAKEIMAGE(IMAGE_clock, IMAGE_COLUMNS_clock, IMAGE_ROWS_clock),
 };
 
 // Index of the Game of Life image data.
 #define LIFE_IMAGE_INDEX 9
-// Index of the clock image data.
-#define CLOCK_IMAGE_INDEX 10
 
 // Number of LEDs in the strip.
 #define NUMPIXELS 72
@@ -120,8 +101,6 @@ Adafruit_DotStar strip(NUMPIXELS, DATAPIN, CLOCKPIN, DOTSTAR_BGR);
 #define ROTATE_INTERVAL 10000
 // Time in microseconds to step Game of Life simulation.
 #define LIFE_INTERVAL 500000
-// Time in microseconds to update clock.
-#define CLOCK_INTERVAL 1000000
 
 int started = 0;
 int cur_hall = 0;
@@ -139,11 +118,6 @@ uint32_t start_button_pressed = 0;
 
 int cur_image_index = 0;
 image_metadata *cur_image = &images[cur_image_index];
-
-// For clock function.
-const char* ntpServer = "pool.ntp.org";
-const long  gmtOffset_sec = 3600;
-const int   daylightOffset_sec = 3600;
 
 // Set all pixels to the given color.
 void setAll(uint32_t color) {
@@ -254,44 +228,6 @@ void step_life() {
   }
 }
 
-// Initialize clock data.
-void init_clock() {
-  for (int i = 0; i < IMAGE_ROWS_clock * IMAGE_COLUMNS_clock; i++) {
-    IMAGE_clock[i] = 0;
-  }
-}
-
-// Render the given string to the image clock data.
-void render_text(char *s, int x, int y) {
-  char c;
-  while (c = *s++) {
-    int index;
-    if (c < ' ') {
-      index = 0;
-    } else {
-      index = c - ' ';
-    }
-    // Get index into bitmap font image for this character.
-    const uint8_t *chr = &IMAGE_zxpix_font[index * FONT_CHAR_WIDTH * 3];
-    for (int row = 0; row < FONT_CHAR_HEIGHT; row++) {
-      for (int col = 0; col < FONT_CHAR_WIDTH; col++) {
-        IMAGE_clock[(y * IMAGE_COLUMNS_clock) + x] = *chr++;     // Red
-        IMAGE_clock[(y * IMAGE_COLUMNS_clock) + x + 1] = *chr++; // Green
-        IMAGE_clock[(y * IMAGE_COLUMNS_clock) + x + 2] = *chr++; // Blue
-      }
-      // Skip to next row of the font input image.
-      chr += IMAGE_COLUMNS_zxpix_font * 3;
-    }
-    x += FONT_CHAR_WIDTH;
-    // Bail out if we go off the end of the output image.
-    if (x + FONT_CHAR_WIDTH >= IMAGE_COLUMNS_clock) return;
-  }
-}
-
-void show_clock() {
-  render_text("Testing", 0, 10);
-}
-
 void setup() {
   Serial.begin(115200);
   Serial.println("Initializing...");
@@ -320,42 +256,6 @@ void setup() {
   delay(200);
   setAll(0x0000ff);
   delay(200);
-  
-  // Connect to Wifi. Pulse strip blue while we're connecting.
-  Serial.printf("Connecting to WiFi network: %s ", WIFI_SSID);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  int wifi_step = 0;
-  while (wifi_step < 60 && WiFi.status() != WL_CONNECTED) {
-      Serial.print(".");
-      strip.setBrightness(10 * ((wifi_step % 5) + 1));
-      setAll(0x0000ff);
-      strip.show();
-      delay(500);
-  }
-  if (wifi_step == 60) {
-    Serial.println(" Connection failed.");
-  } else {
-    Serial.println(" Wifi connected.");
-    configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-    struct tm timeinfo;
-    if (!getLocalTime(&timeinfo)) {
-      Serial.println("Failed to obtain time");
-    } else {
-      Serial.println(&timeinfo, "Current time: %A, %B %d %Y %H:%M:%S");
-    }
-  }
-
-  strip.begin();
-  strip.show();
-  strip.setBrightness(BRIGHTNESS);
-  setAll(0xff0000);
-  delay(200);
-  setAll(0x00ff00);
-  delay(200);
-  setAll(0x0000ff);
-  delay(200);
-  setAll(0x0);
-  strip.show();
 }
 
 uint32_t get_color(int x, int y) {
@@ -444,9 +344,6 @@ void loop() {
   
   int speedPotVal = analogRead(SPEEDPOT);
   ledcAnalogWrite(LEDC_CHANNEL_0, speedPotVal >> 5);
-  Serial.printf("SpeedPotVal: %d\n", speedPotVal);
-  return;
-
   
   int shiftPotVal = analogRead(SHIFTPOT);
   int brtPotVal = analogRead(BRTPOT);
@@ -496,11 +393,7 @@ void loop() {
       if (cur_image_index == LIFE_IMAGE_INDEX && cur_time - last_life_time > LIFE_INTERVAL) {
         step_life();
         last_life_time = cur_time;
-      } else if (cur_image_index == LIFE_IMAGE_INDEX && cur_time - last_clock_time > CLOCK_INTERVAL) {
-        show_clock();
-        last_clock_time = cur_time;
       }
-
     }
   } else if (hall == HIGH && cur_hall == 1) {
     cur_hall = 0;
