@@ -40,7 +40,7 @@ LOG_DIR = "/home/mdw/tensorboard/"
 DATASET_DIR = "/home/mdw/datasets/brick-dataset/images/"
 CHECKPOINT_DIR = "/home/mdw/checkpoints/"
 MAX_EPOCHS = 100
-INITIAL_LR = 0.001
+INITIAL_LR = 0.01
 MOMENTUM = 0.9
 GAMMA = 0.1
 
@@ -134,7 +134,8 @@ predict(
 )
 
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(model.classifier.parameters(), lr=INITIAL_LR, momentum=MOMENTUM)
+#optimizer = optim.SGD(model.classifier.parameters(), lr=INITIAL_LR, momentum=MOMENTUM)
+optimizer = optim.RMSprop(model.classifier.parameters(), lr=INITIAL_LR, momentum=MOMENTUM)
 scheduler = StepLR(optimizer, step_size=((MAX_EPOCHS * 0.9) // 3), gamma=GAMMA)
 training_history = {"accuracy": [], "loss": []}
 validation_history = {"accuracy": [], "loss": []}
